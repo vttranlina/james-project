@@ -77,6 +77,7 @@ class MailboxGetMethod @Inject() (serializer: MailboxSerializer,
 
   override def doProcess(capabilities: Set[CapabilityIdentifier], invocation: InvocationWithContext, mailboxSession: MailboxSession, request: MailboxGetRequest): SMono[InvocationWithContext] = {
     val requestedProperties: Properties = request.properties.getOrElse(Mailbox.allProperties)
+
     (requestedProperties -- Mailbox.allProperties match {
       case invalidProperties if invalidProperties.isEmpty() => getMailboxes(capabilities, request, mailboxSession)
         .reduce(MailboxGetResults.empty())(MailboxGetResults.merge)

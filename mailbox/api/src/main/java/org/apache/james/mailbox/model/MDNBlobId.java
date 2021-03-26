@@ -16,25 +16,13 @@
  * specific language governing permissions and limitations      *
  * under the License.                                           *
  ****************************************************************/
+package org.apache.james.mailbox.model;
 
-package org.apache.james.jmap.mail
-
-import eu.timepit.refined.collection.NonEmpty
-import eu.timepit.refined.refineV
-import eu.timepit.refined.types.string.NonEmptyString
-import org.apache.james.mailbox.model.MessageId
-import org.apache.james.mailbox.model.{BlobId => JavaBlobId}
-
-import scala.util.{Failure, Success, Try}
-
-object BlobId {
-  def of(string: String): Try[BlobId] = refineV[NonEmpty](string) match {
-      case scala.Right(value) => Success(BlobId(value))
-      case Left(e) => Failure(new IllegalArgumentException(e))
+public interface MDNBlobId {
+    
+    interface Factory {
+        MDNBlobId fromString(String serialized);
     }
-  def of(messageId: MessageId): Try[BlobId] = of(messageId.serialize())
-  def of(messageId: MessageId, partId: PartId): Try[BlobId] = of(s"${messageId.serialize()}_${partId.serialize}")
-  def toJava(blobId: BlobId): JavaBlobId = JavaBlobId.fromString(blobId.value.value)
+    
+    String serialize();
 }
-
-case class BlobId(value: NonEmptyString)

@@ -507,6 +507,7 @@ trait EmailGetMethodContract {
       .body
       .asString
 
+    println(response)
     assertThatJson(response)
       .inPath("methodResponses[0][1].list[0]")
       .isEqualTo(
@@ -563,6 +564,8 @@ trait EmailGetMethodContract {
       .extract
       .body
       .asString
+
+    println(response)
 
     assertThatJson(response)
       .inPath("methodResponses[0][1].list[0]")

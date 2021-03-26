@@ -159,12 +159,14 @@ class EmailGetMethod @Inject() (readerFactory: EmailViewReaderFactory,
       case Left(_) => None
       case Right(messageId) => Some(messageId)
     })
-    val parsingErrors: SFlux[EmailGetResults] = SFlux.fromIterable(parsedIds.flatMap({
+    var listEmailGetResult  = parsedIds.flatMap({
       case Left((id, error)) =>
         EmailGetMethod.logger.warn(s"id parsing failed", error)
         Some(EmailGetResults.notFound(id))
       case Right(_) => None
-    }))
+    });
+
+    val parsingErrors = SFlux.fromIterable(listEmailGetResult)
 
     SFlux.merge(Seq(retrieveEmails(messagesIds, mailboxSession, request), parsingErrors))
       .reduce(EmailGetResults.empty())(EmailGetResults.merge)
