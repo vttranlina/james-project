@@ -24,36 +24,43 @@ import org.apache.james.jmap.core.CapabilityIdentifier.{CapabilityIdentifier, JM
 import org.apache.james.jmap.core.Invocation._
 import org.apache.james.jmap.core.{AccountId, ErrorCode, Invocation}
 import org.apache.james.jmap.json.{MDNParseSerializer, ResponseSerializer}
-import org.apache.james.jmap.mail.BlobId.toJava
 import org.apache.james.jmap.mail.MDNParse.UnparsedBlobId
-import org.apache.james.jmap.mail.{BlobId, MDNNotFound, MDNNotParsable, MDNParseFailure, MDNParseRequest, MDNParseResponse, MDNParsed}
-import org.apache.james.jmap.routes.SessionSupplier
-import org.apache.james.mailbox.model.{Blob, BlobId => JavaBlobId}
-import org.apache.james.mailbox.{BlobManager, MailboxSession, MessageIdManager}
+import org.apache.james.jmap.mail.{BlobId, MDNNotFound, MDNNotParsable, MDNParseRequest, MDNParseResponse, MDNParsed}
+import org.apache.james.jmap.routes.{BlobNotFoundException, BlobResolvers, SessionSupplier}
+import org.apache.james.mailbox.MailboxSession
+import org.apache.james.mdn.MDNReportParser
 import org.apache.james.metrics.api.MetricFactory
 import play.api.libs.json.{JsError, JsObject, JsSuccess}
 import reactor.core.scala.publisher.{SFlux, SMono}
-import eu.timepit.refined.auto._
-import reactor.core.scheduler.Schedulers
 
+import java.io.InputStream
 import java.nio.charset.StandardCharsets
 import javax.inject.Inject
-import javax.mail.Message
 
 object MDNParseResults {
-  def notFound(blobId: BlobId): MDNParseResults = MDNParseResults(Map.empty,MDNNotFound(Set()), MDNNotParsable(Set.empty))
+  def notFound(blobId: UnparsedBlobId): MDNParseResults = MDNParseResults(Map(), MDNNotFound(Set(blobId)), MDNNotParsable.empty())
+
+  def notFound(blobId: BlobId): MDNParseResults = MDNParseResults(Map(), MDNNotFound(Set(blobId.value)), MDNNotParsable.empty())
+
+  def notParse(blobId: UnparsedBlobId): MDNParseResults = MDNParseResults(Map(), MDNNotFound.empty(), MDNNotParsable(Set(blobId)))
+
+  def notParse(blobId: BlobId): MDNParseResults = MDNParseResults(Map(), MDNNotFound.empty(), MDNNotParsable(Set(blobId.value)))
+
+  def parse(blobId: BlobId, mdnParsed: MDNParsed): MDNParseResults = MDNParseResults(Map(blobId -> mdnParsed), MDNNotFound.empty(), MDNNotParsable.empty())
+
 
   def empty(): MDNParseResults = MDNParseResults(Map(), MDNNotFound(Set()), MDNNotParsable(Set()))
 
-  def merge(response1: MDNParseResults, response2: MDNParseResults) =
+  def merge(response1: MDNParseResults, response2: MDNParseResults): MDNParseResults =
     MDNParseResults(response1.parsed ++ response2.parsed,
       response1.notFound.merge(response2.notFound),
-      response2.notParsable.merge(response2.notParsable))
+      response1.notParsable.merge(response2.notParsable))
 }
 
 case class MDNParseResults(parsed: Map[BlobId, MDNParsed],
                            notFound: MDNNotFound,
                            notParsable: MDNNotParsable) {
+
   def merge(other: MDNParseResults): MDNParseResults = MDNParseResults(this.parsed ++ other.parsed,
     this.notFound.merge(other.notFound),
     this.notParsable.merge(other.notParsable))
@@ -66,8 +73,9 @@ case class MDNParseResults(parsed: Map[BlobId, MDNParsed],
   )
 }
 
-class MDNParseMethod @Inject()(messageIdManager: MessageIdManager,
-                               blobManager: BlobManager,
+case class RequestTooLargeException(description: String) extends Exception
+
+class MDNParseMethod @Inject()(val blobResolvers: BlobResolvers,
                                val metricFactory: MetricFactory,
                                val sessionSupplier: SessionSupplier) extends MethodRequiringAccountId[MDNParseRequest] {
   override val methodName: MethodName = MethodName("MDN/parse")
@@ -84,10 +92,18 @@ class MDNParseMethod @Inject()(messageIdManager: MessageIdManager,
       }).map(InvocationWithContext(_, invocation.processingContext))
   }
 
-  override def getRequest(mailboxSession: MailboxSession, invocation: Invocation): Either[IllegalArgumentException, MDNParseRequest] = {
+  override def getRequest(mailboxSession: MailboxSession, invocation: Invocation): Either[Exception, MDNParseRequest] = {
     MDNParseSerializer.deserializeMDNParseRequest(invocation.arguments.value) match {
-      case JsSuccess(emailGetRequest, _) => Right(emailGetRequest)
+      case JsSuccess(emailGetRequest, _) => validateRequestParameters(emailGetRequest)
       case errors: JsError => Left(new IllegalArgumentException(ResponseSerializer.serialize(errors).toString))
+    }
+  }
+
+  private def validateRequestParameters(request: MDNParseRequest): Either[RequestTooLargeException, MDNParseRequest] = {
+    if (request.blobIds.value.length > 200) {
+      Left(RequestTooLargeException("The number of ids requested by the client exceeds the maximum number the server is willing to process in a single method call"))
+    } else {
+      Right(request)
     }
   }
 
@@ -107,30 +123,50 @@ class MDNParseMethod @Inject()(messageIdManager: MessageIdManager,
       .flatMap(BlobId.of(_).fold(e => None, value => Some(value)))
 
     val invalidIds: Seq[UnparsedBlobId] = request.blobIds.value
-      .flatMap(unparsed => BlobId.of(unparsed).fold(e => Some(unparsed), _ => None))
-
-    val parsed: SFlux[MDNParseResults] = SFlux.fromIterable(parsedIds)
-      .flatMap(blobId => blobToMDN(toJava(blobId), mailboxSession)
-        .map(parsed => (blobId, parsed)))
-      .map(pair => MDNParseResults(Map((pair._1, pair._2)), MDNNotFound.empty, MDNNotParsable.empty))
+      .flatMap(unparsed => BlobId.of(unparsed).fold(_ => Some(unparsed), _ => None))
 
     val invalid: SFlux[MDNParseResults] = SFlux.fromIterable(invalidIds)
-      .map(id => MDNParseResults(Map(), MDNNotFound.empty, MDNNotParsable(Set(id))))
+      .map(id => MDNParseResults.notFound(id))
 
-    //TODO: notFound = invalid ++ blob notFound
-//    val notFound: SFlux[MDNParseResults] = ???
-
-    //TODO:
-//    val notParsable: SFlux[MDNParseResults] = ???
+    val parsed: SFlux[MDNParseResults] = SFlux.fromIterable(parsedIds)
+      .flatMap(blobId => retrieve(blobId, mailboxSession))
 
     SFlux.merge(Seq(parsed, invalid))
       .reduce(MDNParseResults.empty())(MDNParseResults.merge)
       .map(result => result.asResponse(request.accountId))
   }
 
-  private def blobToMDN(blobId: JavaBlobId, mailboxSession: MailboxSession): SMono[MDNParsed] = {
-    SMono.fromCallable(() => blobManager.retrieve(blobId, mailboxSession))
-//      .map(blob => new String(blob.getStream.readAllBytes(), StandardCharsets.UTF_8))
-      .map(content => MDNParsed(None, None, None, None, None, None, None))
+  private def retrieve(blobId: BlobId, mailboxSession: MailboxSession): SMono[MDNParseResults] = {
+    blobResolvers.resolve(blobId, mailboxSession)
+      .map(blob => convert(blobId, blob.content))
+      .onErrorRecover {
+        case e: BlobNotFoundException => MDNParseResults.notFound(e.blobId)
+      }
+  }
+
+  private def convert(blobId: BlobId, blobContent: InputStream): MDNParseResults = {
+    println(new String(blobContent.readAllBytes(), StandardCharsets.UTF_8))
+    var parser = MDNReportParser.parse(blobContent, StandardCharsets.UTF_8.toString)
+    if (blobId.equals(BlobId.of("1").toOption.get)) {
+      var mockParser = MDNReportParser.parse(
+        """Reporting-UA: UA_name; UA_product
+          |MDN-Gateway: smtp; apache.org
+          |Original-Recipient: rfc822; originalRecipient
+          |Final-Recipient: rfc822; final_recipient
+          |Original-Message-ID: <original@message.id>
+          |Disposition: automatic-action/MDN-sent-automatically;processed/error,failed
+          |Error: Message1
+          |Error: Message2
+          |X-OPENPAAS-IP: 177.177.177.77
+          |X-OPENPAAS-PORT: 8000
+          |""".replace(System.lineSeparator(), "\r\n")
+          .stripMargin)
+      //      parser = mockParser
+    }
+    if (parser.isSuccess) {
+      MDNParseResults.parse(blobId, MDNParsed.convertFromMDNReport(parser.get))
+    } else {
+      MDNParseResults.notParse(blobId)
+    }
   }
 }

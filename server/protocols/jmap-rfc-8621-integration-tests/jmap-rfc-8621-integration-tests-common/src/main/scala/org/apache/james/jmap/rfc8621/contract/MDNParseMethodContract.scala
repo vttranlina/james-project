@@ -1,5 +1,6 @@
 package org.apache.james.jmap.rfc8621.contract
 
+import com.fasterxml.jackson.core.JsonParser
 import io.netty.handler.codec.http.HttpHeaderNames.ACCEPT
 import io.restassured.RestAssured._
 import io.restassured.http.ContentType.JSON
@@ -15,8 +16,10 @@ import org.apache.james.mime4j.dom.Message
 import org.apache.james.modules.MailboxProbeImpl
 import org.apache.james.utils.DataProbeImpl
 import org.junit.jupiter.api.{BeforeEach, Test}
+import play.api.libs.json._
 
 import java.nio.charset.StandardCharsets
+import scala.tools.nsc.doc.html.page.JSONArray
 
 object MDNParseMethodContract {
   private def createTestMessage: Message = Message.Builder
@@ -68,7 +71,7 @@ trait MDNParseMethodContract {
          |    "MDN/parse",
          |    {
          |      "accountId": "29883977c13473ae7cb7678ef767cbfbaffc8a44a6e463d971d23a65c1dc4af6",
-         |      "blobIds": [ "$messageId" ]
+         |      "blobIds": [ "${messageId.serialize()}" ]
          |    },
          |    "c1"]]
          |}""".stripMargin
@@ -161,7 +164,8 @@ trait MDNParseMethodContract {
 
   @Test
   def mdnParseShouldFailWhenNumberOfBlobIdsTooLarge(): Unit = {
-    val blogIds = LazyList.continually(randomMessageId.serialize()).take(200).mkString(", ");
+    val blogIds = LazyList.continually(randomMessageId.serialize()).take(201).toArray;
+    val blogIdsJson = Json.stringify(Json.arr(blogIds)).replace("[[","[").replace("]]","]");
     val request =
       s"""{
          |  "using": [
@@ -171,7 +175,7 @@ trait MDNParseMethodContract {
          |    "MDN/parse",
          |    {
          |      "accountId": "29883977c13473ae7cb7678ef767cbfbaffc8a44a6e463d971d23a65c1dc4af6",
-         |      "blobIds": [ "$blogIds" ]
+         |      "blobIds":  ${blogIdsJson}
          |    },
          |    "c1"]]
          |}""".stripMargin
@@ -194,14 +198,10 @@ trait MDNParseMethodContract {
         s"""{
            |  "sessionState": "${SESSION_STATE.value}",
            |  "methodResponses": [[
-           |    "MDN/parse",
+           |    "error",
            |    {
-           |      "accountId": "29883977c13473ae7cb7678ef767cbfbaffc8a44a6e463d971d23a65c1dc4af6",
-           |      "error": {
            |          "type": "requestTooLarge",
-           |          "description": "The number of blobIds exceeds maximum size of 200",
-           |          "properties":["blobIds"]
-           |      }
+           |          "description": "The number of ids requested by the client exceeds the maximum number the server is willing to process in a single method call"
            |    },
            |    "c1"]]
            |}""".stripMargin)

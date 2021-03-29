@@ -188,6 +188,7 @@ class MessagePartBlobResolver @Inject()(val messageIdFactory: MessageId.Factory,
 class BlobResolvers @Inject()(val messageBlobResolver: MessageBlobResolver,
                               val messagePartBlobResolver: MessagePartBlobResolver,
                               val attachmentBlobResolver: AttachmentBlobResolver) {
+
   def resolve(blobId: BlobId, mailboxSession: MailboxSession): SMono[Blob] =
     messageBlobResolver
       .resolve(blobId, mailboxSession).asOption

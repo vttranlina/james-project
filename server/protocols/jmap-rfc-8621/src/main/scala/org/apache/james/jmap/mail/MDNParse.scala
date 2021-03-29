@@ -5,6 +5,8 @@ import eu.timepit.refined.collection.NonEmpty
 import org.apache.james.jmap.core.AccountId
 import org.apache.james.jmap.mail.MDNParse._
 import org.apache.james.jmap.method.WithAccountId
+import org.apache.james.mdn.MDNReport
+import org.apache.james.mdn.fields.{Disposition => JavaDisposition}
 
 import scala.util.Try
 
@@ -23,6 +25,14 @@ case class BlobIds(value: Seq[UnparsedBlobId])
 
 case class MDNParseRequest(accountId: AccountId,
                            blobIds: BlobIds) extends WithAccountId {
+
+  def validate: Either[IllegalArgumentException, MDNParseRequest] = {
+    if (blobIds.value.length > 2) {
+      Left(new IllegalArgumentException(s"The number of ids requested by the client exceeds the maximum number the server is willing to process in a single method call"))
+    } else {
+      scala.Right(this)
+    }
+  }
 }
 
 object MDNNotFound {
@@ -43,22 +53,44 @@ case class MDNNotParsable(value: Set[UnparsedBlobId]) {
 
 case class MDNParseFailure(value: UnparsedBlobId)
 
-case class MDNDisposition(actionMode: Option[String],
-                          sendingMode: Option[String],
-                          `type`: Option[String])
+object MDNDisposition {
+  def convertFromJava(javaDisposition: JavaDisposition): MDNDisposition =
+    MDNDisposition(actionMode = javaDisposition.getActionMode.getValue,
+      sendingMode = javaDisposition.getSendingMode.getValue,
+      `type` = javaDisposition.getType.getValue)
+
+}
+
+case class MDNDisposition(actionMode: String,
+                          sendingMode: String,
+                          `type`: String)
+
+object MDNParsed {
+  def convertFromMDNReport(mdnReport: MDNReport): MDNParsed = {
+    MDNParsed(
+      forEmailId = Some("forEmailIdTodo"),
+      subject = Some("subjectTodo"),
+      textBody = Some("textBodyTodo"),
+      reportingUA = Some(mdnReport.getReportingUserAgentField.get().getUserAgentName),
+      finalRecipient = mdnReport.getFinalRecipientField.formattedValue(),
+      originalMessageId = Some(mdnReport.getOriginalMessageIdField.get().formattedValue()),
+      disposition = MDNDisposition.convertFromJava(mdnReport.getDispositionField)
+    )
+  }
+}
 
 case class MDNParsed(forEmailId: Option[String],
                      subject: Option[String],
                      textBody: Option[String],
                      reportingUA: Option[String],
-                     finalRecipient: Option[String],
+                     finalRecipient: String,
                      originalMessageId: Option[String],
-                     disposition: Option[MDNDisposition])
+                     disposition: MDNDisposition)
 
 object MDNParseResults {
   def empty(accountId: AccountId): MDNParseResults = MDNParseResults(Map(), MDNNotFound(Set()), MDNNotParsable(Set()))
 
-  def merge(response1: MDNParseResults, response2: MDNParseResults) =
+  def merge(response1: MDNParseResults, response2: MDNParseResults): MDNParseResults =
     MDNParseResults(response1.parsed ++ response2.parsed,
       response1.notFound.merge(response2.notFound),
       response2.notParsable.merge(response2.notParsable))

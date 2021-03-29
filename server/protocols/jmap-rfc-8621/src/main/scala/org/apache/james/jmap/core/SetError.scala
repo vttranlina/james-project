@@ -33,6 +33,7 @@ object SetError {
   val invalidPatchValue: SetErrorType = "invalidPatch"
   val notFoundValue: SetErrorType = "notFound"
   val forbiddenValue: SetErrorType = "forbidden"
+  val requestTooLarge: SetErrorType = "requestTooLarge"
 
   def invalidArguments(description: SetErrorDescription, properties: Option[Properties] = None): SetError =
     SetError(invalidArgumentValue, description, properties)

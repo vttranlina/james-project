@@ -41,6 +41,8 @@ import org.apache.james.mailbox.model.MessageId;
 import org.apache.james.mailbox.model.MessageResult;
 
 import com.github.fge.lambdas.Throwing;
+import org.apache.james.mime4j.parser.MimeStreamParser;
+import org.apache.james.mime4j.stream.MimeConfig;
 
 public class StoreBlobManager implements BlobManager {
     public static final ContentType MESSAGE_RFC822_CONTENT_TYPE = ContentType.of("message/rfc822");
@@ -63,9 +65,17 @@ public class StoreBlobManager implements BlobManager {
 
     @Override
     public Blob retrieve(BlobId blobId, MailboxSession mailboxSession) throws MailboxException, BlobNotFoundException {
-        return getBlobFromAttachment(blobId, mailboxSession)
+        var blob= getBlobFromAttachment(blobId, mailboxSession)
                 .orElseGet(() -> getBlobFromMessage(blobId, mailboxSession)
                 .orElseThrow(() -> new BlobNotFoundException(blobId)));
+
+        try {
+
+        } catch (Exception e){
+            e.printStackTrace();
+        }
+
+        return blob;
     }
 
     private Optional<Blob> getBlobFromAttachment(BlobId blobId, MailboxSession mailboxSession) throws MailboxException {
