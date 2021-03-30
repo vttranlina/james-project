@@ -1,0 +1,42 @@
+Return-Path: <vttran@linagora.com>
+X-JAMES-MDN-JMAP-MESSAGE-ID: 49c73510-9108-11eb-a5a7-11eb7059e7ef
+Delivered-To: dlkhuat@linagora.com
+Received: from 172.17.0.1 (EHLO incoming.linagora.com) ([172.17.0.1])
+          by incoming.linagora.com (JAMES SMTP Server ) with ESMTP ID -2132285157
+          for <dlkhuat@linagora.com>;
+          Tue, 30 Mar 2021 03:31:53 +0000 (GMT)
+Received: from smtp.linagora.com (smtp.linagora.com [54.36.8.78])
+	by incoming.linagora.com (Postfix) with ESMTPS id 07F889C94E
+	for <dlkhuat@linagora.com>; Tue, 30 Mar 2021 03:31:53 +0000 (UTC)
+Received: from ?Open?PaaS?SMTP?server?for?Linagora? (unknown [51.83.109.124])
+	(using TLSv1.2 with cipher ECDHE-RSA-AES256-GCM-SHA384 (256/256 bits))
+	(No client certificate requested)
+	by smtp.linagora.com (Postfix) with ESMTPSA id A546141988
+	for <dlkhuat@linagora.com>; Tue, 30 Mar 2021 05:31:52 +0200 (CEST)
+DKIM-Signature: a=rsa-sha256; b=gKKGOdEbBhawfnacaiTY5EpDLqvZRIlsE0ruzzOhjoEoBCihBXR6x+8kxex+5foxQSgh2jrA2MpO3KWek09T7iBsQVEtYyP0WzI5OCPP3cr7YLcYupHR6nHX67RX6s9zfSxHJIe3g9Pu1lvHaccerXcmbIUn9+ASMYMQcaaGkC28oErqwdVpP10wuh3uG6ldVMP7u0l92zLAnm46ZLrto93q6SGvRwQrNsOdRSbFcXzLIoof/W8CeRB1XsZFFdMw13ZYrSDvbZJy7XKJ+JC1/rDsPEvBrCK4LSeTSwShRIa0W0ngzcKnnSU2euKEIfU0yA1xzRFjwKmVwYkw9lMSSw==; s=smtpoutjames; d=linagora.com; v=1; bh=mp7hTO5ziw/dybkyEQaZoAR5XUlRsOCr83HXos5MgzQ=; h=from : reply-to : subject : date : to : cc : resent-date : resent-from : resent-sender : resent-to : resent-cc : in-reply-to : references : list-id : list-help : list-unsubscribe : list-subscribe : list-post : list-owner : list-archive;
+MIME-Version: 1.0
+Content-Type: multipart/report; report-type=disposition-notification;
+ boundary="-=Part.e.fbba3f3ef449cf21.1788130035a.be0dce94fc2486bf=-"
+To: dlkhuat@linagora.com
+X-LINAGORA-Copy-Delivery-Done: 1
+From: vttran@linagora.com
+Subject: Read: test
+Date: Tue, 30 Mar 2021 03:31:50 +0000
+Message-ID: <Mime4j.f.9089aa43e656a14b.1788130035c@linagora.com>
+
+---=Part.e.fbba3f3ef449cf21.1788130035a.be0dce94fc2486bf=-
+Content-Type: text/plain; charset=UTF-8
+
+To: dlkhuat@linagora.com
+Subject: test
+Message was displayed on Tue Mar 30 2021 10:31:50 GMT+0700 (Indochina Time)
+---=Part.e.fbba3f3ef449cf21.1788130035a.be0dce94fc2486bf=-
+Content-Type: message/disposition-notification; charset=UTF-8
+
+Reporting-UA: OpenPaaS Unified Inbox; 
+Original-Recipient: rfc822; vttran@linagora.com
+Final-Recipient: rfc822; vttran@linagora.com
+Original-Message-ID: <633c6811-f897-ec7c-642a-2360366e1b93@linagora.com>
+Disposition: manual-action/MDN-sent-manually;displayed
+
+---=Part.e.fbba3f3ef449cf21.1788130035a.be0dce94fc2486bf=---

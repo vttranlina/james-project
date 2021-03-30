@@ -34,6 +34,7 @@ import org.apache.james.mailbox.exception.MailboxException;
 import org.apache.james.mailbox.model.MessageId;
 import org.apache.james.mailbox.model.MultimailboxesSearchQuery;
 import org.apache.james.mailbox.model.SearchQuery;
+import org.apache.james.mdn.MDN;
 import org.apache.james.mdn.MDNReport;
 import org.apache.james.mdn.MDNReportParser;
 import org.apache.james.mdn.fields.OriginalMessageId;
@@ -85,12 +86,18 @@ public class ExtractMDNOriginalJMAPMessageId extends GenericMailet {
         MailAddress recipient = Iterables.getOnlyElement(mail.getRecipients());
         MimeMessage mimeMessage = mail.getMessage();
 
-        findReport(mimeMessage)
-            .flatMap(this::parseReport)
-            .flatMap(MDNReport::getOriginalMessageIdField)
-            .map(OriginalMessageId::getOriginalMessageId)
-            .flatMap(messageId -> findMessageIdForRFC822MessageId(messageId, recipient))
-            .ifPresent(messageId -> setJmapMessageIdAsHeader(mimeMessage, messageId));
+        // todo use MDN::parse
+        try {
+            var message = new DefaultMessageBuilder().parseMessage(new MimeMessageInputStream(mimeMessage));
+            Optional.of(MDN.parse(message))
+                    .map(MDN::getReport)
+                    .flatMap(MDNReport::getOriginalMessageIdField)
+                    .map(OriginalMessageId::getOriginalMessageId)
+                    .flatMap(messageId -> findMessageIdForRFC822MessageId(messageId, recipient))
+                    .ifPresent(messageId -> setJmapMessageIdAsHeader(mimeMessage, messageId));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     private void setJmapMessageIdAsHeader(MimeMessage mimeMessage, MessageId messageId) {
