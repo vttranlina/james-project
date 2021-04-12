@@ -1,0 +1,86 @@
+/****************************************************************
+ * Licensed to the Apache Software Foundation (ASF) under one   *
+ * or more contributor license agreements.  See the NOTICE file *
+ * distributed with this work for additional information        *
+ * regarding copyright ownership.  The ASF licenses this file   *
+ * to you under the Apache License, Version 2.0 (the            *
+ * "License"); you may not use this file except in compliance   *
+ * with the License.  You may obtain a copy of the License at   *
+ *                                                              *
+ *   http://www.apache.org/licenses/LICENSE-2.0                 *
+ *                                                              *
+ * Unless required by applicable law or agreed to in writing,   *
+ * software distributed under the License is distributed on an  *
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY       *
+ * KIND, either express or implied.  See the License for the    *
+ * specific language governing permissions and limitations      *
+ * under the License.                                           *
+ ****************************************************************/
+
+package org.apache.james.jmap.json
+
+import org.apache.james.jmap.core.{Id, SetError}
+import org.apache.james.jmap.mail.MDNSend.MDNSendId
+import org.apache.james.jmap.mail.{ErrorField, FinalRecipientField, ForEmailIdField, IdentityId, IncludeOriginalMessageField, MDNDisposition, MDNGatewayField, MDNSendCreateRequest, MDNSendCreateResponse, MDNSendRequest, MDNSendResponse, OriginalMessageIdField, OriginalRecipientField, ReportUAField, SubjectField, TextBodyField}
+import org.apache.james.mailbox.model.MessageId
+import play.api.libs.json._
+
+import javax.inject.Inject
+import scala.util.Try
+
+
+class MDNSendSerializer @Inject()(messageIdFactory: MessageId.Factory) {
+
+  private implicit val messageIdReads: Reads[MessageId] = {
+    case JsString(serializedMessageId) => Try(JsSuccess(messageIdFactory.fromString(serializedMessageId)))
+      .fold(_ => JsError("Invalid messageId"), messageId => messageId)
+    case _ => JsError("Expecting messageId to be represented by a JsString")
+  }
+  private implicit val messageIdWrites: Writes[MessageId] = id => JsString(id.serialize())
+  private implicit val forEmailIdReads: Reads[ForEmailIdField] = Json.valueReads[ForEmailIdField]
+  private implicit val forEmailIdWrites: Writes[ForEmailIdField] = Json.valueFormat[ForEmailIdField]
+  private implicit val subjectFieldFormat: Format[SubjectField] = Json.valueFormat[SubjectField]
+  private implicit val textBodyFieldFormat: Format[TextBodyField] = Json.valueFormat[TextBodyField]
+  private implicit val reportUAFieldFormat: Format[ReportUAField] = Json.valueFormat[ReportUAField]
+  private implicit val finalRecipientFieldReads: Reads[FinalRecipientField] = Json.valueReads[FinalRecipientField]
+  private implicit val finalRecipientFieldWrites: Writes[FinalRecipientField] = Json.valueWrites[FinalRecipientField]
+  private implicit val originalMessageIdFieldFormat: Format[OriginalMessageIdField] = Json.valueFormat[OriginalMessageIdField]
+  private implicit val originalRecipientFieldFormat: Format[OriginalRecipientField] = Json.valueFormat[OriginalRecipientField]
+  private implicit val includeOriginalMessageFieldReads: Reads[IncludeOriginalMessageField] = Json.valueReads[IncludeOriginalMessageField]
+  private implicit val includeOriginalMessageFieldWrites: Writes[IncludeOriginalMessageField] = Json.valueWrites[IncludeOriginalMessageField]
+  private implicit val mdnGatewayFieldFormat: Format[MDNGatewayField] = Json.valueFormat[MDNGatewayField]
+  private implicit val mdnDispositionFormat: Format[MDNDisposition] = Json.format[MDNDisposition]
+  private implicit val identityIdFormat: Format[IdentityId] = Json.valueFormat[IdentityId]
+  private implicit val errorFieldFormat: Format[ErrorField] = Json.format[ErrorField]
+
+  private implicit val mapMDNSendIDAndMDNReads: Reads[Map[MDNSendId, JsObject]] =
+    Reads.mapReads[MDNSendId, JsObject] {
+      s => Id.validate(s).fold(e => JsError(e.getMessage), partId => JsSuccess(partId))
+    }
+
+  private implicit val mdnWrites: Writes[MDNSendCreateRequest] = Json.writes[MDNSendCreateRequest]
+  private implicit val mdnObjectWrites: OWrites[MDNSendCreateRequest] = Json.writes[MDNSendCreateRequest]
+  private implicit val mdnRequestReads: Reads[MDNSendCreateRequest] = Json.reads[MDNSendCreateRequest]
+  private implicit val mdnSendRequestReads: Reads[MDNSendRequest] = Json.reads[MDNSendRequest]
+  private implicit val setErrorWrites: Writes[SetError] = Json.writes[SetError]
+  private implicit val mdnNotSentMapWrites: Writes[Map[MDNSendId, SetError]] = mapWrites[MDNSendId, SetError](id => id.value, setErrorWrites)
+  private implicit val mdnResponseWrites: Writes[MDNSendCreateResponse] = Json.writes[MDNSendCreateResponse]
+  private implicit val mdnResponseObjectWrites: OWrites[MDNSendCreateResponse] = Json.writes[MDNSendCreateResponse]
+
+  private implicit val mdnSentMapWrites: Writes[Map[MDNSendId, MDNSendCreateResponse]] = mapWrites[MDNSendId, MDNSendCreateResponse](id => id.value, mdnResponseWrites)
+
+  private implicit val mdnSendResponseWrites: Writes[MDNSendResponse] = Json.writes[MDNSendResponse]
+
+  def deserializeMDNSendRequest(input: JsValue): JsResult[MDNSendRequest] = Json.fromJson[MDNSendRequest](input)
+
+  def deserializeMDNSendRequest(input: String): JsResult[MDNSendRequest] = Json.parse(input).validate[MDNSendRequest]
+
+  def deserializeMDNSendCreateRequest(input: JsValue): JsResult[MDNSendCreateRequest] = Json.fromJson[MDNSendCreateRequest](input)
+
+  def serializeMDNSendResponse(mdnSendResponse: MDNSendResponse): JsValue = Json.toJson(mdnSendResponse)
+
+  def serializeMDNRequest(mdnRequest: MDNSendCreateRequest): JsObject = Json.toJsObject(mdnRequest)
+
+  def serializeMDNResponse(mdnResponse: MDNSendCreateResponse): JsValue = Json.toJson(mdnResponse)
+
+}
