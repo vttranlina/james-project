@@ -74,7 +74,7 @@ public class Gateway implements Field {
     }
 
     public String fieldValue() {
-        return Joiner.on("; ").skipNulls().join(nameType.getType(), name.formatted());
+        return Joiner.on(";").skipNulls().join(nameType.getType(), name.formatted());
     }
 
     public AddressType getNameType() {

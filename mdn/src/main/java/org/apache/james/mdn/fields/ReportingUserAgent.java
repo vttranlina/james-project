@@ -25,8 +25,6 @@ import java.util.function.Predicate;
 
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
-import com.google.common.base.Splitter;
-import com.google.common.collect.ImmutableList;
 
 /**
  * Implements optional Reporting-UA header field
@@ -59,17 +57,6 @@ public class ReportingUserAgent implements Field {
 
         public Builder userAgentProduct(String userAgentProduct) {
             this.userAgentProduct = Optional.of(userAgentProduct);
-            return this;
-        }
-
-        public Builder parse(String value) {
-            var list = ImmutableList.copyOf(Splitter.on("; ").omitEmptyStrings().split(value));
-            if (list.size() >= 1) {
-                this.userAgentName = list.get(0);
-                if (list.size() >= 2) {
-                    this.userAgentProduct = Optional.of(list.get(1));
-                }
-            }
             return this;
         }
 

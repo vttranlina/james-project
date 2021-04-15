@@ -29,6 +29,8 @@ import org.apache.james.mailbox.exception.MailboxException;
 import org.apache.james.mailbox.model.ComposedMessageId;
 import org.apache.james.mailbox.model.MailboxId;
 import org.apache.james.mailbox.model.MailboxPath;
+import org.apache.james.mailbox.model.MessageId;
+import org.apache.james.mailbox.model.MultimailboxesSearchQuery;
 
 public interface MailboxProbe {
 
@@ -44,4 +46,7 @@ public interface MailboxProbe {
             boolean isRecent, Flags flags) throws MailboxException;
 
     Collection<String> listSubscriptions(String user) throws Exception;
+
+    Collection<MessageId> searchMessage(MultimailboxesSearchQuery expression, String user, long limit);
+
 }

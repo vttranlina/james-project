@@ -23,21 +23,23 @@ import eu.timepit.refined.auto._
 import org.apache.james.jmap.core.CapabilityIdentifier.{CapabilityIdentifier, JMAP_CORE, JMAP_MAIL, JMAP_MDN}
 import org.apache.james.jmap.core.Invocation._
 import org.apache.james.jmap.core.{ClientId, Id, Invocation, ServerId}
-import org.apache.james.jmap.json.{MDNSendSerializer, ResponseSerializer}
-import org.apache.james.jmap.mail.MDNSend.MDNSendId
+import org.apache.james.jmap.json.{MDNSerializer, ResponseSerializer}
+import org.apache.james.jmap.mail.MDN._
+import org.apache.james.jmap.mail.MDNSend.MDN_ALREADY_SENT_FLAG
 import org.apache.james.jmap.mail._
 import org.apache.james.jmap.method.EmailSubmissionSetMethod.LOGGER
 import org.apache.james.jmap.routes.{ProcessingContext, SessionSupplier}
 import org.apache.james.lifecycle.api.Startable
 import org.apache.james.mailbox.model.{FetchGroup, MessageId, MessageResult}
 import org.apache.james.mailbox.{MailboxSession, MessageIdManager}
-import org.apache.james.mdn.`type`.DispositionType
-import org.apache.james.mdn.action.mode.DispositionActionMode
-import org.apache.james.mdn.fields.{ExtensionField, ReportingUserAgent, Disposition => DispositionJava}
-import org.apache.james.mdn.sending.mode.DispositionSendingMode
+import org.apache.james.mdn.fields.{ExtensionField, FinalRecipient, Text}
 import org.apache.james.mdn.{MDN, MDNReport}
 import org.apache.james.metrics.api.MetricFactory
+import org.apache.james.mime4j.codec.DecodeMonitor
 import org.apache.james.mime4j.dom.Message
+import org.apache.james.mime4j.field.AddressListFieldLenientImpl
+import org.apache.james.mime4j.message.DefaultMessageBuilder
+import org.apache.james.mime4j.stream.MimeConfig
 import org.apache.james.queue.api.MailQueueFactory.SPOOL
 import org.apache.james.queue.api.{MailQueue, MailQueueFactory}
 import org.apache.james.server.core.MailImpl
@@ -47,11 +49,12 @@ import reactor.core.scheduler.Schedulers
 
 import javax.annotation.PreDestroy
 import javax.inject.Inject
+import javax.mail.internet.MimeMessage
 import scala.jdk.CollectionConverters._
 import scala.jdk.OptionConverters._
 import scala.util.Try
 
-class MDNSendMethod @Inject()(serializer: MDNSendSerializer,
+class MDNSendMethod @Inject()(serializer: MDNSerializer,
                               mailQueueFactory: MailQueueFactory[_ <: MailQueue],
                               messageIdManager: MessageIdManager,
                               emailSetMethod: EmailSetMethod,
@@ -126,97 +129,141 @@ class MDNSendMethod @Inject()(serializer: MDNSendSerializer,
       .fold(error => (MDNSendResults.notSent(mdnSendId, error) -> processingContext),
         creation => (creation -> processingContext))
 
-  private def parseMDNRequest(jsObject: JsObject): Either[MDNSendParseException, MDNSendCreateRequest] =
+  private def parseMDNRequest(jsObject: JsObject): Either[MDNSendRequestInvalidException, MDNSendCreateRequest] =
       MDNSendCreateRequest.validateProperties(jsObject)
         .flatMap(validJson => serializer.deserializeMDNSendCreateRequest(validJson) match {
           case JsSuccess(createRequest, _) => createRequest.validate
-          case JsError(errors) => Left(MDNSendParseException.parse(errors))
+          case JsError(errors) => Left(MDNSendRequestInvalidException.parse(errors))
         })
 
   private def sendMDN(session: MailboxSession,
                       mdnSendId: MDNSendId,
-                      requestEntry: MDNSendCreateRequest): Either[Throwable, (MDNSendResults, MessageId)] = {
-    val mdnRelatedMessage: Either[Exception, MessageResult] = messageIdManager.getMessage(requestEntry.forEmailId.originalMessageId, FetchGroup.FULL_CONTENT, session)
+                      requestEntry: MDNSendCreateRequest): Either[Throwable, (MDNSendResults, MessageId)] =
+    for {
+      mdnRelatedMessageResult <- retrieveRelatedMessageResult(session, requestEntry)
+      mdnRelatedMessageResultAlready <- validateMDNNotAlreadySent(mdnRelatedMessageResult)
+      messageRelated = getOriginalMessage(mdnRelatedMessageResultAlready)
+      mailAndResponse <- buildMailAndResponse(session.getUser.asString(), requestEntry, messageRelated)
+      enqueue <- Try(queue.enQueue(mailAndResponse._1)).toEither
+    } yield {
+      MDNSendResults.sent(mdnSendId, mailAndResponse._2, mdnRelatedMessageResultAlready.getMessageId) -> mdnRelatedMessageResultAlready.getMessageId
+    }
+
+  private def retrieveRelatedMessageResult(session: MailboxSession, requestEntry: MDNSendCreateRequest): Either[MDNSendNotFoundException, MessageResult] =
+    messageIdManager.getMessage(requestEntry.forEmailId.originalMessageId, FetchGroup.FULL_CONTENT, session)
       .asScala
       .toList
       .headOption
-      .toRight(MDNSendForEmailIdNotFoundException("The reference \"forEmailId\" cannot be found."))
+      .toRight(MDNSendNotFoundException("The reference \"forEmailId\" cannot be found."))
 
-    val mdnRelatedMessageAlready: Either[Exception, MessageResult] = mdnRelatedMessage.flatMap(messageResult => {
-      if (isMDNSentAlready(messageResult)) {
-        Left(MDNSendAlreadySentException())
-      } else {
-        scala.Right(messageResult)
-      }
-    })
 
-    mdnRelatedMessageAlready.flatMap(msg => {
-      val result: Try[(MDNSendResults, MessageId)] = {
-        val (mail, createResponse) = buildMailAndResponse(session, requestEntry, msg)
-        queue.enQueue(mail)
-        Try(MDNSendResults.sent(mdnSendId, createResponse, msg.getMessageId) -> msg.getMessageId)
-      }
-      result.toEither
-    })
-  }
-
-  private def isMDNSentAlready(messageResultRelated: MessageResult): Boolean =
-    messageResultRelated.getFlags.contains("$mdnsent")
+  private def validateMDNNotAlreadySent(relatedMessageResult: MessageResult): Either[MDNSendAlreadySentException, MessageResult] =
+    if (relatedMessageResult.getFlags.contains(MDN_ALREADY_SENT_FLAG)) {
+      Left(MDNSendAlreadySentException())
+    } else {
+      scala.Right(relatedMessageResult)
+    }
 
   private def recordCreationIdInProcessingContext(mdnSendId: MDNSendId,
                                                   messageId: MessageId,
                                                   processingContext: ProcessingContext): Either[IllegalArgumentException, ProcessingContext] =
+    Id.validate(messageId.serialize())
+      .map(serverAssignedId => processingContext.recordCreatedId(ClientId(mdnSendId.id), ServerId(serverAssignedId)))
+
+
+  private def buildMailAndResponse(sender: String, requestEntry: MDNSendCreateRequest, originalMessage: Message): Either[Exception, (MailImpl, MDNSendCreateResponse)] = {
     for {
-      creationId <- Id.validate(mdnSendId)
-      serverAssignedId <- Id.validate(messageId.serialize())
+      originalRecipient <- getMDNRecipient(originalMessage)
+      mdn = buildMDN(requestEntry, originalMessage, originalRecipient)
+      subject = buildMessageSubject(requestEntry, originalMessage)
+      (mailImpl, mimeMessage) = buildMailAndMimeMessage(sender, subject, mdn)
     } yield {
-      processingContext.recordCreatedId(ClientId(creationId), ServerId(serverAssignedId))
+      mailImpl -> buildMDNSendCreateResponse(requestEntry, mdn, mimeMessage)
     }
-
-  private def buildMailAndResponse(session: MailboxSession, requestEntry: MDNSendCreateRequest, messageRelated: MessageResult): (MailImpl, MDNSendCreateResponse) = {
-    val sender = session.getUser.asString()
-    val reportBuilder = MDNReport.builder()
-      .dispositionField(DispositionJava.builder()
-        .`type`(DispositionType.fromString(requestEntry.disposition.`type`).orElseThrow())
-        .actionMode(DispositionActionMode.fromString(requestEntry.disposition.actionMode).orElseThrow())
-        .sendingMode(DispositionSendingMode.fromString(requestEntry.disposition.sendingMode).orElseThrow())
-        .build())
-      .finalRecipientField(requestEntry.finalRecipient.getOrElse(FinalRecipientField(sender)).value)
-
-    requestEntry.reportingUA.map(uaField => reportBuilder.reportingUserAgentField(ReportingUserAgent.builder().parse(uaField.value).build()))
-
-    requestEntry.extensionFields.map(extensions => extensions
-      .map(extension => reportBuilder.withExtensionField(ExtensionField.builder()
-        .fieldName(extension._1)
-        .rawValue(extension._2)
-        .build())))
-
-    val mdnBuilder = MDN.builder()
-      .report(reportBuilder.build())
-      .message(requestEntry.includeOriginalMessage
-        .filter(isInclude => isInclude.value)
-        .map(_ => getOriginalMessage(messageRelated)).toJava)
-
-    requestEntry.textBody.map(textBody => mdnBuilder.humanReadableText(textBody.value))
-
-    val newMessageId = messageIdFactory.generate().serialize()
-    val mdn = mdnBuilder.build()
-    val mimeMessage = mdn.asMimeMessage()
-
-    mimeMessage.setFrom(sender)
-    mimeMessage.setRecipients(javax.mail.Message.RecipientType.TO, getRecipientAddress(messageRelated, session))
-    mimeMessage.setHeader("Message-Id", newMessageId)
-    mimeMessage.setSubject(requestEntry.subject.getOrElse(SubjectField("subject todo")).value)
-
-    val mdnSendCreateResponse = buildMDNSendCreateResponse(requestEntry, mdn)
-    (MailImpl.fromMimeMessage(newMessageId, mimeMessage) -> mdnSendCreateResponse)
   }
 
-  private def buildMDNSendCreateResponse(requestEntry: MDNSendCreateRequest, mdn: MDN) =
+  private def buildMailAndMimeMessage(sender: String, subject: String, mdn: MDN): (MailImpl, MimeMessage) = {
+    val mimeMessage: MimeMessage = mdn.asMimeMessage()
+    val finalRecipient: String = mdn.getReport.getFinalRecipientField.getFinalRecipient.formatted()
+    mimeMessage.setFrom(sender)
+    mimeMessage.setRecipients(javax.mail.Message.RecipientType.TO, finalRecipient)
+    mimeMessage.setSubject(subject)
+    mimeMessage.saveChanges()
+
+    val mailImpl: MailImpl = MailImpl.builder()
+      .name(messageIdFactory.generate().serialize())
+      .sender(sender)
+      .addRecipient(finalRecipient)
+      .mimeMessage(mimeMessage)
+      .build()
+    mailImpl -> mimeMessage
+  }
+
+  private def getMDNRecipient(originalMessage: Message): Either[MDNSendNotFoundException, String] =
+    originalMessage.getHeader.getFields(DISPOSITION_NOTIFICATION_TO)
+      .asScala
+      .headOption
+      .map(field => AddressListFieldLenientImpl.PARSER.parse(field, new DecodeMonitor))
+      .map(addressListField => addressListField.getAddressList)
+      .map(addressList => addressList.flatten())
+      .flatMap(mailboxList => mailboxList.stream().findAny().toScala)
+      .map(mailbox => mailbox.getAddress)
+      .toRight(MDNSendNotFoundException("Invalid \"Disposition-Notification-To\" header field."))
+
+  private def buildMDN(requestEntry: MDNSendCreateRequest, originalMessage: Message, originalRecipientAddress: String): MDN = {
+    val reportBuilder: MDNReport.Builder = MDNReport.builder()
+      .dispositionField(requestEntry.disposition.asJava.get)
+      .finalRecipientField(requestEntry.finalRecipient
+        .map(finalRecipient => finalRecipient.asJava.get)
+        .getOrElse(FinalRecipient.builder()
+          .finalRecipient(Text.fromRawText(originalRecipientAddress))
+          .build()))
+      .originalRecipientField(originalRecipientAddress)
+
+    originalMessage.getHeader.getFields("Message-ID")
+      .asScala
+      .map(field => reportBuilder.originalMessageIdField(field.getBody))
+
+    requestEntry.reportingUA
+      .map(uaField => uaField.asJava
+        .map(reportingUserAgent => reportBuilder.reportingUserAgentField(reportingUserAgent)))
+
+    requestEntry.extensionFields.map(extensions => extensions
+      .map(extension => reportBuilder.withExtensionField(
+        ExtensionField.builder()
+          .fieldName(extension._1.value)
+          .rawValue(extension._2.value)
+          .build())))
+
+    originalMessage.getHeader.getFields(EmailHeaderName.MESSAGE_ID.value)
+      .asScala
+      .headOption
+      .map(messageIdHeader => reportBuilder.originalMessageIdField(TextHeaderValue.from(messageIdHeader).value))
+
+    MDN.builder()
+      .report(reportBuilder.build())
+      .humanReadableText(buildMDNHumanReadableText(requestEntry))
+      .message(requestEntry.includeOriginalMessage
+        .filter(isInclude => isInclude.value)
+        .map(_ => originalMessage)
+        .toJava)
+      .build()
+  }
+
+  private def buildMDNHumanReadableText(requestEntry: MDNSendCreateRequest) : String =
+    requestEntry.textBody.map(textBody=> textBody.value)
+      .getOrElse(s"The email has been ${requestEntry.disposition.`type`} on your recipient's computer")
+
+  private def buildMessageSubject(requestEntry: MDNSendCreateRequest, originalMessage: Message): String =
+    requestEntry.subject
+      .map(subject => subject.value)
+      .getOrElse(s"""[Received] ${originalMessage.getSubject}""")
+
+  private def buildMDNSendCreateResponse(requestEntry: MDNSendCreateRequest, mdn: MDN, mimeMessage: MimeMessage): MDNSendCreateResponse =
     MDNSendCreateResponse(
       subject = requestEntry.subject match {
         case Some(_) => None
-        case None => Some(SubjectField(mdn.asMimeMessage().getSubject))
+        case None => Some(SubjectField(mimeMessage.getSubject))
       },
       textBody = requestEntry.textBody match {
         case Some(_) => None
@@ -242,21 +289,18 @@ class MDNSendMethod @Inject()(serializer: MDNSendSerializer,
         .map(error => ErrorField(error.getText.formatted()))
         .toSeq)
         .filter(error => error.nonEmpty),
-      extensionFields = requestEntry.extensionFields match {
-        case Some(_) => None
-        case None => Option(mdn.getReport.getExtensionFields.asScala
-          .map(extension => (extension.getFieldName, extension.getRawValue))
-          .toMap).filter(_.nonEmpty)
-      },
       finalRecipient = requestEntry.finalRecipient match {
         case Some(_) => None
         case None => Some(FinalRecipientField(mdn.getReport.getFinalRecipientField.fieldValue()))
-      })
+      },
+      originalMessageId = mdn.getReport.getOriginalMessageIdField
+        .map(originalMessageId => OriginalMessageIdField(originalMessageId.getOriginalMessageId))
+        .toScala)
 
-  private def getOriginalMessage(messageRelated: MessageResult): Message =
-    Message.Builder.of(messageRelated.getBody.getInputStream).build() //todo
-
-  private def getRecipientAddress(messageRelated: MessageResult, session: MailboxSession): String =
-    session.getUser.asString() //todo originalRecipient
-
+  private def getOriginalMessage(messageRelated: MessageResult): Message = {
+    val messageBuilder: DefaultMessageBuilder = new DefaultMessageBuilder
+    messageBuilder.setMimeEntityConfig(MimeConfig.PERMISSIVE)
+    messageBuilder.setDecodeMonitor(DecodeMonitor.SILENT)
+    messageBuilder.parseMessage(messageRelated.getFullContent.getInputStream)
+  }
 }

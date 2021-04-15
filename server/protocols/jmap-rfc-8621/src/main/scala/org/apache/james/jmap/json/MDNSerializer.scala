@@ -20,8 +20,7 @@
 package org.apache.james.jmap.json
 
 import org.apache.james.jmap.core.{Id, SetError}
-import org.apache.james.jmap.mail.MDNSend.MDNSendId
-import org.apache.james.jmap.mail.{ErrorField, FinalRecipientField, ForEmailIdField, IdentityId, IncludeOriginalMessageField, MDNDisposition, MDNGatewayField, MDNSendCreateRequest, MDNSendCreateResponse, MDNSendRequest, MDNSendResponse, OriginalMessageIdField, OriginalRecipientField, ReportUAField, SubjectField, TextBodyField}
+import org.apache.james.jmap.mail.{BlobId, BlobIds, ErrorField, ExtensionFieldName, ExtensionFieldValue, FinalRecipientField, ForEmailIdField, IdentityId, IncludeOriginalMessageField, MDNDisposition, MDNGatewayField, MDNNotFound, MDNNotParsable, MDNParseRequest, MDNParseResponse, MDNParsed, MDNSendCreateRequest, MDNSendCreateResponse, MDNSendId, MDNSendRequest, MDNSendResponse, OriginalMessageIdField, OriginalRecipientField, ReportUAField, SubjectField, TextBodyField}
 import org.apache.james.mailbox.model.MessageId
 import play.api.libs.json._
 
@@ -29,47 +28,62 @@ import javax.inject.Inject
 import scala.util.Try
 
 
-class MDNSendSerializer @Inject()(messageIdFactory: MessageId.Factory) {
+class MDNSerializer @Inject()(messageIdFactory: MessageId.Factory) {
 
   private implicit val messageIdReads: Reads[MessageId] = {
     case JsString(serializedMessageId) => Try(JsSuccess(messageIdFactory.fromString(serializedMessageId)))
       .fold(_ => JsError("Invalid messageId"), messageId => messageId)
     case _ => JsError("Expecting messageId to be represented by a JsString")
   }
+  private implicit val blobIdReads: Reads[BlobId] = Json.valueReads[BlobId]
+  private implicit val blobIdsWrites: Format[BlobIds] = Json.valueFormat[BlobIds]
+  private implicit val mdnNotFoundWrites: Writes[MDNNotFound] = Json.valueWrites[MDNNotFound]
+  private implicit val mdnNotParsableWrites: Writes[MDNNotParsable] = Json.valueWrites[MDNNotParsable]
+
   private implicit val messageIdWrites: Writes[MessageId] = id => JsString(id.serialize())
-  private implicit val forEmailIdReads: Reads[ForEmailIdField] = Json.valueReads[ForEmailIdField]
-  private implicit val forEmailIdWrites: Writes[ForEmailIdField] = Json.valueFormat[ForEmailIdField]
+  private implicit val forEmailIdFormat: Format[ForEmailIdField] = Json.valueFormat[ForEmailIdField]
   private implicit val subjectFieldFormat: Format[SubjectField] = Json.valueFormat[SubjectField]
   private implicit val textBodyFieldFormat: Format[TextBodyField] = Json.valueFormat[TextBodyField]
   private implicit val reportUAFieldFormat: Format[ReportUAField] = Json.valueFormat[ReportUAField]
-  private implicit val finalRecipientFieldReads: Reads[FinalRecipientField] = Json.valueReads[FinalRecipientField]
-  private implicit val finalRecipientFieldWrites: Writes[FinalRecipientField] = Json.valueWrites[FinalRecipientField]
+  private implicit val finalRecipientFieldFormat: Format[FinalRecipientField] = Json.valueFormat[FinalRecipientField]
   private implicit val originalMessageIdFieldFormat: Format[OriginalMessageIdField] = Json.valueFormat[OriginalMessageIdField]
   private implicit val originalRecipientFieldFormat: Format[OriginalRecipientField] = Json.valueFormat[OriginalRecipientField]
-  private implicit val includeOriginalMessageFieldReads: Reads[IncludeOriginalMessageField] = Json.valueReads[IncludeOriginalMessageField]
-  private implicit val includeOriginalMessageFieldWrites: Writes[IncludeOriginalMessageField] = Json.valueWrites[IncludeOriginalMessageField]
+  private implicit val includeOriginalMessageFieldFormat: Format[IncludeOriginalMessageField] = Json.valueFormat[IncludeOriginalMessageField]
   private implicit val mdnGatewayFieldFormat: Format[MDNGatewayField] = Json.valueFormat[MDNGatewayField]
   private implicit val mdnDispositionFormat: Format[MDNDisposition] = Json.format[MDNDisposition]
   private implicit val identityIdFormat: Format[IdentityId] = Json.valueFormat[IdentityId]
-  private implicit val errorFieldFormat: Format[ErrorField] = Json.format[ErrorField]
+  private implicit val mdnErrorFieldReads: Reads[ErrorField] = Json.reads[ErrorField]
+  private implicit val mdnErrorFieldWrites: Writes[ErrorField] = Json.valueWrites[ErrorField]
+  private implicit val extensionFieldNameFormat: Format[ExtensionFieldName] = Json.valueFormat[ExtensionFieldName]
+  private implicit val extensionFieldValueFormat: Format[ExtensionFieldValue] = Json.valueFormat[ExtensionFieldValue]
+
+  private implicit val mdnParsedWrites: Writes[MDNParsed] = Json.writes[MDNParsed]
+  private implicit val parsedMapWrites: Writes[Map[BlobId, MDNParsed]] = mapWrites[BlobId, MDNParsed](s => s.value.value, mdnParsedWrites)
+  private implicit val mdnParseRequestReads: Reads[MDNParseRequest] = Json.reads[MDNParseRequest]
+
 
   private implicit val mapMDNSendIDAndMDNReads: Reads[Map[MDNSendId, JsObject]] =
     Reads.mapReads[MDNSendId, JsObject] {
-      s => Id.validate(s).fold(e => JsError(e.getMessage), partId => JsSuccess(partId))
+      s => Id.validate(s).fold(e => JsError(e.getMessage), partId => JsSuccess(MDNSendId(partId)))
     }
+
+  private implicit val mapExtensionFieldRead: Reads[Map[ExtensionFieldName, ExtensionFieldValue]] =
+    Reads.mapReads[ExtensionFieldName, ExtensionFieldValue] {s => JsSuccess(ExtensionFieldName(s))}
 
   private implicit val mdnWrites: Writes[MDNSendCreateRequest] = Json.writes[MDNSendCreateRequest]
   private implicit val mdnObjectWrites: OWrites[MDNSendCreateRequest] = Json.writes[MDNSendCreateRequest]
   private implicit val mdnRequestReads: Reads[MDNSendCreateRequest] = Json.reads[MDNSendCreateRequest]
   private implicit val mdnSendRequestReads: Reads[MDNSendRequest] = Json.reads[MDNSendRequest]
   private implicit val setErrorWrites: Writes[SetError] = Json.writes[SetError]
-  private implicit val mdnNotSentMapWrites: Writes[Map[MDNSendId, SetError]] = mapWrites[MDNSendId, SetError](id => id.value, setErrorWrites)
+  private implicit val mdnNotSentMapWrites: Writes[Map[MDNSendId, SetError]] = mapWrites[MDNSendId, SetError](mdnSendId => mdnSendId.id.value, setErrorWrites)
   private implicit val mdnResponseWrites: Writes[MDNSendCreateResponse] = Json.writes[MDNSendCreateResponse]
   private implicit val mdnResponseObjectWrites: OWrites[MDNSendCreateResponse] = Json.writes[MDNSendCreateResponse]
 
-  private implicit val mdnSentMapWrites: Writes[Map[MDNSendId, MDNSendCreateResponse]] = mapWrites[MDNSendId, MDNSendCreateResponse](id => id.value, mdnResponseWrites)
+  private implicit val mdnSentMapWrites: Writes[Map[MDNSendId, MDNSendCreateResponse]] = mapWrites[MDNSendId, MDNSendCreateResponse](mdnSendId => mdnSendId.id.value, mdnResponseWrites)
 
   private implicit val mdnSendResponseWrites: Writes[MDNSendResponse] = Json.writes[MDNSendResponse]
+
+  private implicit val mdnParseResponseWrites: Writes[MDNParseResponse] = Json.writes[MDNParseResponse]
 
   def deserializeMDNSendRequest(input: JsValue): JsResult[MDNSendRequest] = Json.fromJson[MDNSendRequest](input)
 
@@ -77,10 +91,15 @@ class MDNSendSerializer @Inject()(messageIdFactory: MessageId.Factory) {
 
   def deserializeMDNSendCreateRequest(input: JsValue): JsResult[MDNSendCreateRequest] = Json.fromJson[MDNSendCreateRequest](input)
 
+  def deserializeMDNSendCreateRequest(input: String): JsResult[MDNSendCreateRequest] = Json.parse(input).validate[MDNSendCreateRequest]
+
   def serializeMDNSendResponse(mdnSendResponse: MDNSendResponse): JsValue = Json.toJson(mdnSendResponse)
 
   def serializeMDNRequest(mdnRequest: MDNSendCreateRequest): JsObject = Json.toJsObject(mdnRequest)
 
   def serializeMDNResponse(mdnResponse: MDNSendCreateResponse): JsValue = Json.toJson(mdnResponse)
 
+  def deserializeMDNParseRequest(input: JsValue): JsResult[MDNParseRequest] = Json.fromJson[MDNParseRequest](input)
+
+  def serializeMDNParseResponse(mdnParseResponse: MDNParseResponse): JsValue =   Json.toJson(mdnParseResponse)
 }
