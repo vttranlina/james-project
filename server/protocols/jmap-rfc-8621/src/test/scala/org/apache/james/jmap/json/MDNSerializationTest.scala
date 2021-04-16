@@ -106,8 +106,8 @@ class MDNSerializationTest extends AnyWordSpec with Matchers {
         includeOriginalMessage = Some(IncludeOriginalMessageField(false)),
         originalMessageId = Some(OriginalMessageIdField("<199509192301.23456@example.org>")))
 
-      val idSent: MDNSendId = MDNSendId(Id.validate("k1546").right.get)
-      val idNotSent: MDNSendId = MDNSendId(Id.validate("k01").right.get)
+      val idSent: MDNSendCreationId = MDNSendCreationId(Id.validate("k1546").right.get)
+      val idNotSent: MDNSendCreationId = MDNSendCreationId(Id.validate("k01").right.get)
 
       val response: MDNSendResponse = MDNSendResponse(
         accountId = ACCOUNT_ID,

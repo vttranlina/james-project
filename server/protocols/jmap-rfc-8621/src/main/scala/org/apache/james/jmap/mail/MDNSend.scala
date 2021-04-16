@@ -27,15 +27,22 @@ import org.apache.james.jmap.method.WithAccountId
 import org.apache.james.mailbox.model.MessageId
 import play.api.libs.json.{JsObject, JsPath, JsonValidationError}
 
+import java.util.UUID
+
 object MDNSend {
   val MDN_ALREADY_SENT_FLAG: String = "$mdnsent"
 }
 
-case class MDNSendId(id: Id)
+object MDNId {
+  def generate: MDNId = MDNId(Id.validate(UUID.randomUUID().toString).toOption.get)
+}
+
+case class MDNSendCreationId(id: Id)
+case class MDNId(value: Id)
 
 object MDNSendRequestInvalidException {
   def parse(errors: collection.Seq[(JsPath, collection.Seq[JsonValidationError])]): MDNSendRequestInvalidException = {
-    val setError = errors.head match {
+    val setError: SetError = errors.head match {
       case (path, Seq()) => SetError.invalidArguments(SetErrorDescription(s"'$path' property in MDNSend object is not valid"))
       case (path, Seq(JsonValidationError(Seq("error.path.missing")))) => SetError.invalidArguments(SetErrorDescription(s"Missing '$path' property in MDNSend object"))
       case (path, Seq(JsonValidationError(Seq(message)))) => SetError.invalidArguments(SetErrorDescription(s"'$path' property in MDNSend object is not valid: $message"))
@@ -90,27 +97,19 @@ case class MDNSendCreateRequest(forEmailId: ForEmailIdField,
       .flatMap(_ => validateFinalRecipient)
 
   def validateDisposition: Either[MDNSendRequestInvalidException, MDNSendCreateRequest] =
-    disposition.valid match {
-      case Left(value) => Left(value)
-      case util.Right(_) => scala.Right(this)
-    }
+    disposition.valid
+      .fold(error => Left(error), _ => scala.Right(this))
 
   def validateReportUA: Either[MDNSendRequestInvalidException, MDNSendCreateRequest] =
     reportingUA match {
       case None => scala.Right(this)
-      case Some(value) => value.valid match {
-        case Left(value) => Left(value)
-        case util.Right(_) => scala.Right(this)
-      }
+      case Some(value) => value.valid.fold(error => Left(error), _ => scala.Right(this))
     }
 
   def validateFinalRecipient: Either[MDNSendRequestInvalidException, MDNSendCreateRequest] =
     finalRecipient match {
       case None => scala.Right(this)
-      case Some(value) => value.valid match {
-        case Left(value) => Left(value)
-        case util.Right(_) => scala.Right(this)
-      }
+      case Some(value) => value.valid.fold(error => Left(error), _ => scala.Right(this))
     }
 }
 
@@ -126,11 +125,11 @@ case class MDNSendCreateResponse(subject: Option[SubjectField],
 
 case class MDNSendRequest(accountId: AccountId,
                           identityId: IdentityId,
-                          send: Map[MDNSendId, JsObject],
-                          onSuccessUpdateEmail: Option[Map[MDNSendId, JsObject]]) extends WithAccountId {
+                          send: Map[MDNSendCreationId, JsObject],
+                          onSuccessUpdateEmail: Option[Map[MDNSendCreationId, JsObject]]) extends WithAccountId {
 
   def validate: Either[IllegalArgumentException, MDNSendRequest] = {
-    val supportedCreationIds: List[MDNSendId] = send.keys.toList
+    val supportedCreationIds: List[MDNSendCreationId] = send.keys.toList
     onSuccessUpdateEmail.getOrElse(Map())
       .keys
       .toList
@@ -139,10 +138,10 @@ case class MDNSendRequest(accountId: AccountId,
       .map(_ => this)
   }
 
-  private def validateOnSuccessUpdateEmail(creationId: MDNSendId, supportedCreationIds: List[MDNSendId]): Either[IllegalArgumentException, MDNSendId] =
+  private def validateOnSuccessUpdateEmail(creationId: MDNSendCreationId, supportedCreationIds: List[MDNSendCreationId]): Either[IllegalArgumentException, MDNSendCreationId] =
     if (creationId.id.value.startsWith("#")) {
       val realId = creationId.id.value.substring(1)
-      val validateId: Either[IllegalArgumentException, MDNSendId] = Id.validate(realId).map(id => MDNSendId(id))
+      val validateId: Either[IllegalArgumentException, MDNSendCreationId] = Id.validate(realId).map(id => MDNSendCreationId(id))
       validateId.flatMap(mdnSendId => if (supportedCreationIds.contains(mdnSendId)) {
         scala.Right(mdnSendId)
       } else {
@@ -152,7 +151,7 @@ case class MDNSendRequest(accountId: AccountId,
       Left(new IllegalArgumentException(s"${creationId.id.value} cannot be retrieved as storage for MDNSend is not yet implemented"))
     }
 
-  def implicitEmailSetRequest(messageIdResolver: MDNSendId => Either[IllegalArgumentException, Option[MessageId]]): Either[IllegalArgumentException, EmailSetRequest] =
+  def implicitEmailSetRequest(messageIdResolver: MDNSendCreationId => Either[IllegalArgumentException, Option[MessageId]]): Either[IllegalArgumentException, EmailSetRequest] =
     resolveOnSuccessUpdateEmail(messageIdResolver)
       .map(update => EmailSetRequest(
         accountId = accountId,
@@ -160,7 +159,7 @@ case class MDNSendRequest(accountId: AccountId,
         update = update,
         destroy = None))
 
-  def resolveOnSuccessUpdateEmail(messageIdResolver: MDNSendId => Either[IllegalArgumentException, Option[MessageId]]): Either[IllegalArgumentException, Option[Map[UnparsedMessageId, JsObject]]] =
+  def resolveOnSuccessUpdateEmail(messageIdResolver: MDNSendCreationId => Either[IllegalArgumentException, Option[MessageId]]): Either[IllegalArgumentException, Option[Map[UnparsedMessageId, JsObject]]] =
     onSuccessUpdateEmail.map(map => map.toList
       .map {
         case (creationId, json) => messageIdResolver.apply(creationId).map(msgOpt => msgOpt.map(messageId => (EmailSet.asUnparsed(messageId), json)))
@@ -175,16 +174,18 @@ case class MDNSendRequest(accountId: AccountId,
 }
 
 case class MDNSendResponse(accountId: AccountId,
-                           sent: Option[Map[MDNSendId, MDNSendCreateResponse]],
-                           notSent: Option[Map[MDNSendId, SetError]])
+                           sent: Option[Map[MDNSendCreationId, MDNSendCreateResponse]],
+                           notSent: Option[Map[MDNSendCreationId, SetError]])
 
 object MDNSendResults {
   def empty: MDNSendResults = MDNSendResults(None, None, Map.empty)
 
-  def sent(mdnSendId: MDNSendId, mdnResponse: MDNSendCreateResponse, forEmailId: MessageId): MDNSendResults =
-    MDNSendResults(Some(Map(mdnSendId -> mdnResponse)), None, Map(mdnSendId -> forEmailId))
+  def sent(createSuccess: MDNSendCreateSuccess): MDNSendResults =
+    MDNSendResults(sent = Some(Map(createSuccess.mdnCreationId -> createSuccess.createResponse)),
+      notSent = None,
+      mdnSentIdResolver = Map(createSuccess.mdnCreationId -> createSuccess.forEmailId))
 
-  def notSent(mdnSendId: MDNSendId, throwable: Throwable): MDNSendResults = {
+  def notSent(mdnSendId: MDNSendCreationId, throwable: Throwable): MDNSendResults = {
     val setError: SetError = throwable match {
       case notFound: MDNSendNotFoundException => SetError.notFound(SetErrorDescription(notFound.description))
       case _: MDNSendForbiddenException => SetError(SetError.forbiddenValue,
@@ -219,14 +220,19 @@ object MDNSendResults {
     mdnSentIdResolver = result1.mdnSentIdResolver ++ result2.mdnSentIdResolver)
 }
 
-case class MDNSendResults(sent: Option[Map[MDNSendId, MDNSendCreateResponse]],
-                          notSent: Option[Map[MDNSendId, SetError]],
-                          mdnSentIdResolver: Map[MDNSendId, MessageId]) {
+case class MDNSendCreateSuccess(mdnCreationId: MDNSendCreationId,
+                                createResponse: MDNSendCreateResponse,
+                                forEmailId : MessageId,
+                                mdnId: MDNId)
 
-  def resolveMessageId(sendId: MDNSendId): Either[IllegalArgumentException, Option[MessageId]] =
+case class MDNSendResults(sent: Option[Map[MDNSendCreationId, MDNSendCreateResponse]],
+                          notSent: Option[Map[MDNSendCreationId, SetError]],
+                          mdnSentIdResolver: Map[MDNSendCreationId, MessageId]) {
+
+  def resolveMessageId(sendId: MDNSendCreationId): Either[IllegalArgumentException, Option[MessageId]] =
     if (sendId.id.value.startsWith("#")) {
-      val realId = sendId.id.value.substring(1)
-      val validatedId: Either[IllegalArgumentException, MDNSendId] = Id.validate(realId).map(id => MDNSendId(id))
+      val realId: String = sendId.id.value.substring(1)
+      val validatedId: Either[IllegalArgumentException, MDNSendCreationId] = Id.validate(realId).map(id => MDNSendCreationId(id))
       validatedId
         .left.map(s => new IllegalArgumentException(s))
         .flatMap(id => retrieveMessageId(id)
@@ -235,7 +241,7 @@ case class MDNSendResults(sent: Option[Map[MDNSendId, MDNSendCreateResponse]],
       Left(new IllegalArgumentException(s"${sendId.id.value} cannot be retrieved as storage for MDNSend is not yet implemented"))
     }
 
-  private def retrieveMessageId(creationId: MDNSendId): Option[MessageId] =
+  private def retrieveMessageId(creationId: MDNSendCreationId): Option[MessageId] =
     sent.getOrElse(Map.empty).
       filter(sentResult => sentResult._1.equals(creationId)).keys
       .headOption
