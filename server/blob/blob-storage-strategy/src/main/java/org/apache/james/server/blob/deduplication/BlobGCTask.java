@@ -110,6 +110,65 @@ public class BlobGCTask implements Task {
         }
     }
 
+    interface Builder {
+
+        @FunctionalInterface
+        interface RequireAssociatedProbability {
+            BlobGCTask associatedProbability(double associatedProbability);
+        }
+
+        @FunctionalInterface
+        interface RequireExpectedBlobCount {
+            RequireAssociatedProbability expectedBlobCount(int expectedBlobCount);
+        }
+
+        @FunctionalInterface
+        interface RequireClock {
+            RequireExpectedBlobCount clock(Clock clock);
+        }
+
+        @FunctionalInterface
+        interface RequireBucketName {
+            RequireClock bucketName(BucketName bucketName);
+        }
+
+        @FunctionalInterface
+        interface RequireBlobReferenceSources {
+            RequireBucketName blobReferenceSource(Set<BlobReferenceSource> blobReferenceSources);
+        }
+
+        @FunctionalInterface
+        interface RequireGenerationAwareBlobIdConfiguration {
+            RequireBlobReferenceSources generationAwareBlobIdConfiguration(GenerationAwareBlobId.Configuration generationAwareBlobIdConfiguration);
+        }
+
+        @FunctionalInterface
+        interface RequireGenerationAwareBlobIdFactory {
+            RequireGenerationAwareBlobIdConfiguration generationAwareBlobIdFactory(GenerationAwareBlobId.Factory generationAwareBlobIdFactory);
+        }
+
+        @FunctionalInterface
+        interface RequireBlobStoreDAO {
+            RequireGenerationAwareBlobIdFactory blobStoreDAO(BlobStoreDAO blobStoreDAO);
+        }
+    }
+
+    public static Builder.RequireBlobStoreDAO builder() {
+        return blobStoreDao -> generationAwareBlobIdFactory -> generationAwareBlobIdConfiguration
+            -> blobReferenceSources -> bucketName -> clock -> expectedBlobCount
+            -> associatedProbability
+            -> new BlobGCTask(
+            blobStoreDao,
+            generationAwareBlobIdFactory,
+            generationAwareBlobIdConfiguration,
+            blobReferenceSources,
+            bucketName,
+            clock,
+            expectedBlobCount,
+            associatedProbability);
+    }
+
+
     private final BlobStoreDAO blobStoreDAO;
     private final GenerationAwareBlobId.Factory generationAwareBlobIdFactory;
     private final GenerationAwareBlobId.Configuration generationAwareBlobIdConfiguration;
@@ -119,6 +178,7 @@ public class BlobGCTask implements Task {
     private final int expectedBlobCount;
     private final double associatedProbability;
     private final Context context;
+
 
     public BlobGCTask(BlobStoreDAO blobStoreDAO,
                       GenerationAwareBlobId.Factory generationAwareBlobIdFactory,
