@@ -1,4 +1,4 @@
-FROM postgres:10.3
+FROM postgres:10
 
 ENV SPAMASSASSIN_VERSION 3.4.2
 
