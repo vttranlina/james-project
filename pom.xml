@@ -652,7 +652,7 @@
         <scala.version>${scala.base}.7</scala.version>
         <scalatestplus-play.version>5.0.0</scalatestplus-play.version>
         <doclint>none</doclint>
-        <jetty.version>9.4.31.v20200723</jetty.version>
+        <jetty.version>9.4.46.v20220331</jetty.version>
     </properties>
 
     <dependencyManagement>
