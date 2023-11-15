@@ -26,8 +26,10 @@ import org.apache.james.backends.postgres.PostgresTable;
 import org.jooq.Field;
 import org.jooq.Record;
 import org.jooq.Table;
+import org.jooq.impl.BuiltInDataType;
 import org.jooq.impl.DSL;
 import org.jooq.impl.SQLDataType;
+import org.jooq.postgres.extensions.types.Hstore;
 
 public interface PostgresMailboxModule {
     interface PostgresMailboxTable {
@@ -40,6 +42,8 @@ public interface PostgresMailboxModule {
         Field<String> MAILBOX_NAMESPACE = DSL.field("mailbox_namespace", SQLDataType.VARCHAR(255).notNull());
         Field<Long> MAILBOX_LAST_UID = DSL.field("mailbox_last_uid", SQLDataType.BIGINT);
         Field<Long> MAILBOX_HIGHEST_MODSEQ = DSL.field("mailbox_highest_modseq", SQLDataType.BIGINT);
+        Field<Hstore> MAILBOX_ACL = DSL.field("mailbox_acl", new BuiltInDataType<>(Hstore.class, "hstore"));
+
 
         PostgresTable TABLE = PostgresTable.name(TABLE_NAME.getName())
             .createTableStep(((dsl, tableName) -> dsl.createTable(tableName)
@@ -50,6 +54,7 @@ public interface PostgresMailboxModule {
                 .column(MAILBOX_NAMESPACE)
                 .column(MAILBOX_LAST_UID)
                 .column(MAILBOX_HIGHEST_MODSEQ)
+                .column(MAILBOX_ACL)
                 .constraint(DSL.primaryKey(MAILBOX_ID))
                 .constraint(DSL.unique(MAILBOX_NAME, USER_NAME, MAILBOX_NAMESPACE))))
             .supportsRowLevelSecurity();

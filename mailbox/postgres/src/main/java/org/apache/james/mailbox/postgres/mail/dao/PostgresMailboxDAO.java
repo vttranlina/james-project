@@ -19,6 +19,7 @@
 
 package org.apache.james.mailbox.postgres.mail.dao;
 
+import static org.apache.james.mailbox.postgres.mail.PostgresMailboxModule.PostgresMailboxTable.MAILBOX_ACL;
 import static org.apache.james.mailbox.postgres.mail.PostgresMailboxModule.PostgresMailboxTable.MAILBOX_ID;
 import static org.apache.james.mailbox.postgres.mail.PostgresMailboxModule.PostgresMailboxTable.MAILBOX_NAME;
 import static org.apache.james.mailbox.postgres.mail.PostgresMailboxModule.PostgresMailboxTable.MAILBOX_NAMESPACE;
@@ -27,6 +28,9 @@ import static org.apache.james.mailbox.postgres.mail.PostgresMailboxModule.Postg
 import static org.apache.james.mailbox.postgres.mail.PostgresMailboxModule.PostgresMailboxTable.USER_NAME;
 import static org.jooq.impl.DSL.count;
 
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
 import javax.inject.Inject;
 
 import org.apache.james.backends.postgres.utils.PostgresExecutor;
@@ -34,6 +38,7 @@ import org.apache.james.core.Username;
 import org.apache.james.mailbox.exception.MailboxExistsException;
 import org.apache.james.mailbox.exception.MailboxNotFoundException;
 import org.apache.james.mailbox.model.Mailbox;
+import org.apache.james.mailbox.model.MailboxACL;
 import org.apache.james.mailbox.model.MailboxId;
 import org.apache.james.mailbox.model.MailboxPath;
 import org.apache.james.mailbox.model.UidValidity;
@@ -42,7 +47,9 @@ import org.apache.james.mailbox.postgres.PostgresMailboxId;
 import org.apache.james.mailbox.store.MailboxExpressionBackwardCompatibility;
 import org.jooq.Record;
 import org.jooq.exception.DataAccessException;
+import org.jooq.postgres.extensions.types.Hstore;
 
+import com.github.fge.lambdas.Throwing;
 import com.google.common.base.Preconditions;
 
 import reactor.core.publisher.Flux;
@@ -51,6 +58,19 @@ import reactor.core.publisher.Mono;
 public class PostgresMailboxDAO {
     private static final char SQL_WILDCARD_CHAR = '%';
     private static final String DUPLICATE_VIOLATION_MESSAGE = "duplicate key value violates unique constraint";
+    private final Function<MailboxACL, Hstore> MAILBOX_ACL_TO_HSTORE_FUNCTION = acl -> Hstore.hstore(acl.getEntries()
+        .entrySet()
+        .stream()
+        .collect(Collectors.toMap(
+            entry -> entry.getKey().serialize(),
+            entry -> entry.getValue().serialize())));
+
+    private final Function<Hstore, MailboxACL> HSTORE_TO_MAILBOX_ACL_FUNCTION = hstore -> new MailboxACL(hstore.data()
+        .entrySet()
+        .stream()
+        .collect(Collectors.toMap(
+            entry -> MailboxACL.EntryKey.deserialize(entry.getKey()),
+            Throwing.function(entry -> MailboxACL.Rfc4314Rights.deserialize(entry.getValue())))));
 
     private final PostgresExecutor postgresExecutor;
 
@@ -63,7 +83,7 @@ public class PostgresMailboxDAO {
         final PostgresMailboxId mailboxId = PostgresMailboxId.generate();
 
         return postgresExecutor.executeVoid(dslContext -> Mono.from(dslContext.insertInto(TABLE_NAME, MAILBOX_ID, MAILBOX_NAME, USER_NAME, MAILBOX_NAMESPACE, MAILBOX_UID_VALIDITY)
-            .values(mailboxId.asUuid(), mailboxPath.getName(), mailboxPath.getUser().asString(), mailboxPath.getNamespace(), uidValidity.asLong())))
+                .values(mailboxId.asUuid(), mailboxPath.getName(), mailboxPath.getUser().asString(), mailboxPath.getNamespace(), uidValidity.asLong())))
             .thenReturn(new Mailbox(mailboxPath, uidValidity, mailboxId))
             .onErrorMap(e -> e instanceof DataAccessException && e.getMessage().contains(DUPLICATE_VIOLATION_MESSAGE),
                 e -> new MailboxExistsException(mailboxPath.getName()));
@@ -86,6 +106,22 @@ public class PostgresMailboxDAO {
                 .returning(MAILBOX_ID)))
             .map(record -> mailbox.getMailboxId())
             .switchIfEmpty(Mono.error(new MailboxNotFoundException(mailbox.getMailboxId())));
+    }
+
+
+    public Mono<MailboxACL> getACL(PostgresMailboxId mailboxId) {
+        return postgresExecutor.dslContext()
+            .flatMap(dsl -> Mono.from(dsl.select(MAILBOX_ACL)
+                .from(TABLE_NAME)
+                .where(MAILBOX_ID.eq(mailboxId.asUuid()))))
+            .map(record -> record.get(MAILBOX_ACL))
+            .map(HSTORE_TO_MAILBOX_ACL_FUNCTION);
+    }
+
+    public Mono<Void> upsertACL(PostgresMailboxId mailboxId, MailboxACL acl) {
+        return postgresExecutor.executeVoid(dslContext -> Mono.from(dslContext.update(TABLE_NAME)
+            .set(MAILBOX_ACL, MAILBOX_ACL_TO_HSTORE_FUNCTION.apply(acl))
+            .where(MAILBOX_ID.eq(mailboxId.asUuid()))));
     }
 
     public Mono<Void> delete(MailboxId mailboxId) {
