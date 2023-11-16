@@ -69,4 +69,43 @@ public class PostgresMailboxMapperTest extends MailboxMapperTest {
 
         assertThat(dao.getACL((PostgresMailboxId) mailbox.getMailboxId()).block()).isEqualTo(mailboxACL);
     }
+
+
+    @Test
+    void getRightByMailboxIdAndEntryKeyShouldWork() {
+        // Given
+        Mailbox mailbox = mailboxMapper.create(benwaInboxPath, UidValidity.of(42)).block();
+        Username user = Username.of("user1");
+        Username user2 = Username.of("user2");
+        MailboxACL.EntryKey userEntryKey1 = MailboxACL.EntryKey.createUserEntryKey(user);
+        MailboxACL mailboxACL = new MailboxACL(new MailboxACL.Entry(userEntryKey1, new MailboxACL.Rfc4314Rights(MailboxACL.Right.Administer)),
+            new MailboxACL.Entry(MailboxACL.EntryKey.createUserEntryKey(user2), new MailboxACL.Rfc4314Rights(MailboxACL.Right.Read, MailboxACL.Right.Lookup, MailboxACL.Right.Write)));
+        dao.upsertACL((PostgresMailboxId) mailbox.getMailboxId(), mailboxACL).block();
+
+        // When
+        MailboxACL.Rfc4314Rights rights = dao.getRightByMailboxIdAndEntryKey((PostgresMailboxId) mailbox.getMailboxId(), userEntryKey1).block();
+
+        // Then
+        assertThat(rights).isEqualTo(new MailboxACL.Rfc4314Rights(MailboxACL.Right.Administer));
+    }
+
+    @Test
+    void upsertRightShouldWork() {
+        // Given
+        Mailbox mailbox = mailboxMapper.create(benwaInboxPath, UidValidity.of(42)).block();
+        Username user = Username.of("user1");
+        Username user2 = Username.of("user2");
+        MailboxACL.EntryKey userEntryKey1 = MailboxACL.EntryKey.createUserEntryKey(user);
+        MailboxACL mailboxACL = new MailboxACL(new MailboxACL.Entry(userEntryKey1, new MailboxACL.Rfc4314Rights(MailboxACL.Right.Administer)),
+            new MailboxACL.Entry(MailboxACL.EntryKey.createUserEntryKey(user2), new MailboxACL.Rfc4314Rights(MailboxACL.Right.Read, MailboxACL.Right.Lookup, MailboxACL.Right.Write)));
+        dao.upsertACL((PostgresMailboxId) mailbox.getMailboxId(), mailboxACL).block();
+
+        // When
+        MailboxACL.Rfc4314Rights newRight = new MailboxACL.Rfc4314Rights(MailboxACL.Right.Lookup);
+        dao.upsertMailboxACLRight((PostgresMailboxId) mailbox.getMailboxId(), userEntryKey1, newRight).block();
+
+        // Then
+        assertThat(dao.getRightByMailboxIdAndEntryKey((PostgresMailboxId) mailbox.getMailboxId(), userEntryKey1).block())
+            .isEqualTo(newRight);
+    }
 }

@@ -52,6 +52,7 @@ import org.jooq.postgres.extensions.types.Hstore;
 import com.github.fge.lambdas.Throwing;
 import com.google.common.base.Preconditions;
 
+import io.r2dbc.spi.Result;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -122,6 +123,28 @@ public class PostgresMailboxDAO {
         return postgresExecutor.executeVoid(dslContext -> Mono.from(dslContext.update(TABLE_NAME)
             .set(MAILBOX_ACL, MAILBOX_ACL_TO_HSTORE_FUNCTION.apply(acl))
             .where(MAILBOX_ID.eq(mailboxId.asUuid()))));
+    }
+
+    public Mono<MailboxACL.Rfc4314Rights> getRightByMailboxIdAndEntryKey(PostgresMailboxId mailboxId, MailboxACL.EntryKey entryKey) {
+        return postgresExecutor.connection()
+            .flatMap(con -> Mono.from(con.createStatement("select mailbox_acl-> $1 as acl_right from mailbox where mailbox_id = $2")
+                    .bind("$1", entryKey.serialize())
+                    .bind("$2", mailboxId.asUuid())
+                    .execute())
+                .flatMapMany(result -> result.map((row, rowMetadata) -> row.get(0, String.class)))
+                .last())
+            .map(Throwing.function(MailboxACL.Rfc4314Rights::deserialize));
+    }
+
+    public Mono<Void> upsertMailboxACLRight(PostgresMailboxId mailboxId, MailboxACL.EntryKey entryKey, MailboxACL.Rfc4314Rights rights) {
+        return postgresExecutor.connection()
+            .flatMapMany(con -> con.createStatement("update mailbox set mailbox_acl[$1] = $2 where mailbox_id = $3")
+                .bind("$1", entryKey.serialize())
+                .bind("$2", rights.serialize())
+                .bind("$3", mailboxId.asUuid())
+                .execute())
+            .flatMap(Result::getRowsUpdated)
+            .then();
     }
 
     public Mono<Void> delete(MailboxId mailboxId) {
