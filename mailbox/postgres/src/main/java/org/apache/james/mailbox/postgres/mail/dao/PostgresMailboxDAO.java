@@ -28,6 +28,7 @@ import static org.apache.james.mailbox.postgres.mail.PostgresMailboxModule.Postg
 import static org.apache.james.mailbox.postgres.mail.PostgresMailboxModule.PostgresMailboxTable.USER_NAME;
 import static org.jooq.impl.DSL.count;
 
+import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -52,21 +53,20 @@ import org.jooq.postgres.extensions.types.Hstore;
 import com.github.fge.lambdas.Throwing;
 import com.google.common.base.Preconditions;
 
-import io.r2dbc.spi.Result;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 public class PostgresMailboxDAO {
     private static final char SQL_WILDCARD_CHAR = '%';
     private static final String DUPLICATE_VIOLATION_MESSAGE = "duplicate key value violates unique constraint";
-    private final Function<MailboxACL, Hstore> MAILBOX_ACL_TO_HSTORE_FUNCTION = acl -> Hstore.hstore(acl.getEntries()
+    private static final Function<MailboxACL, Hstore> MAILBOX_ACL_TO_HSTORE_FUNCTION = acl -> Hstore.hstore(acl.getEntries()
         .entrySet()
         .stream()
         .collect(Collectors.toMap(
             entry -> entry.getKey().serialize(),
             entry -> entry.getValue().serialize())));
 
-    private final Function<Hstore, MailboxACL> HSTORE_TO_MAILBOX_ACL_FUNCTION = hstore -> new MailboxACL(hstore.data()
+    private static final Function<Hstore, MailboxACL> HSTORE_TO_MAILBOX_ACL_FUNCTION = hstore -> new MailboxACL(hstore.data()
         .entrySet()
         .stream()
         .collect(Collectors.toMap(
@@ -109,7 +109,6 @@ public class PostgresMailboxDAO {
             .switchIfEmpty(Mono.error(new MailboxNotFoundException(mailbox.getMailboxId())));
     }
 
-
     public Mono<MailboxACL> getACL(PostgresMailboxId mailboxId) {
         return postgresExecutor.dslContext()
             .flatMap(dsl -> Mono.from(dsl.select(MAILBOX_ACL)
@@ -136,15 +135,27 @@ public class PostgresMailboxDAO {
             .map(Throwing.function(MailboxACL.Rfc4314Rights::deserialize));
     }
 
-    public Mono<Void> upsertMailboxACLRight(PostgresMailboxId mailboxId, MailboxACL.EntryKey entryKey, MailboxACL.Rfc4314Rights rights) {
+    public Mono<MailboxACL> upsertMailboxACLRight(PostgresMailboxId mailboxId, MailboxACL.EntryKey entryKey, MailboxACL.Rfc4314Rights rights) {
         return postgresExecutor.connection()
-            .flatMapMany(con -> con.createStatement("update mailbox set mailbox_acl[$1] = $2 where mailbox_id = $3")
+            .flatMap(con -> Mono.from(con.createStatement("update mailbox set mailbox_acl[$1] = $2 where mailbox_id = $3 returning mailbox_acl")
                 .bind("$1", entryKey.serialize())
                 .bind("$2", rights.serialize())
                 .bind("$3", mailboxId.asUuid())
-                .execute())
-            .flatMap(Result::getRowsUpdated)
-            .then();
+                .execute()))
+            .flatMap(result -> Mono.from(result.map((row, rowMetadata) -> row.get(0, Map.class))))
+            .map(Hstore::hstore)
+            .map(HSTORE_TO_MAILBOX_ACL_FUNCTION);
+    }
+
+    public Mono<MailboxACL> deleteRightByMailboxIdAndEntryKey(PostgresMailboxId mailboxId, MailboxACL.EntryKey entryKey) {
+        return postgresExecutor.connection()
+            .flatMap(con -> Mono.from(con.createStatement("update mailbox set mailbox_acl = delete(mailbox_acl, $1) where mailbox_id = $2 returning mailbox_acl")
+                .bind("$1", entryKey.serialize())
+                .bind("$2", mailboxId.asUuid())
+                .execute()))
+            .flatMap(result -> Mono.from(result.map((row, rowMetadata) -> row.get(0, Map.class))))
+            .map(Hstore::hstore)
+            .map(HSTORE_TO_MAILBOX_ACL_FUNCTION);
     }
 
     public Mono<Void> delete(MailboxId mailboxId) {
