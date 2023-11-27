@@ -73,6 +73,7 @@ public interface PostgresMessageModule {
         Table<Record> TABLE_NAME = DSL.table("message_mailbox");
         Field<UUID> MAILBOX_ID = DSL.field("mailbox_id", SQLDataType.UUID.notNull());
         Field<Long> MESSAGE_UID = DSL.field("message_uid", SQLDataType.BIGINT.notNull());
+        Field<Long> MOD_SEQ = DSL.field("mod_seq", SQLDataType.BIGINT.notNull());
         Field<UUID> MESSAGE_ID = PostgresMessageModule.MESSAGE_ID;
         Field<String> THREAD_ID = DSL.field("thread_id", SQLDataType.NVARCHAR(255));
         Field<Boolean> IS_DELETED = DSL.field("is_deleted", SQLDataType.BOOLEAN.nullable(false)
@@ -84,11 +85,14 @@ public interface PostgresMessageModule {
         Field<Boolean> IS_SEEN = DSL.field("is_seen", SQLDataType.BOOLEAN.nullable(false));
         Field<Boolean> IS_USER = DSL.field("is_user", SQLDataType.BOOLEAN.nullable(false));
         Field<String[]> USER_FLAGS = DSL.field("user_flags", DataTypes.STRING_ARRAY);
+        Field<LocalDateTime> SAVE_DATE = DSL.field("save_date", DataTypes.TIMESTAMP);
+
 
         PostgresTable TABLE = PostgresTable.name(TABLE_NAME.getName())
             .createTableStep(((dsl, tableName) -> dsl.createTableIfNotExists(tableName)
                 .column(MAILBOX_ID)
                 .column(MESSAGE_UID)
+                .column(MOD_SEQ)
                 .column(MESSAGE_ID)
                 .column(THREAD_ID)
                 .column(IS_DELETED)
@@ -99,6 +103,7 @@ public interface PostgresMessageModule {
                 .column(IS_SEEN)
                 .column(IS_USER)
                 .column(USER_FLAGS)
+                .column(SAVE_DATE)
                 .constraint(DSL.primaryKey(MAILBOX_ID, MESSAGE_UID))
                 .comment("Holds mailbox and flags for each message")))
             .supportsRowLevelSecurity();

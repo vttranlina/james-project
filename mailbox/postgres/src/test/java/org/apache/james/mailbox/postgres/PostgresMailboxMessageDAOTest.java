@@ -42,6 +42,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
+// TODO just for local development, will be removed
+@Deprecated
 class PostgresMailboxMessageDAOTest {
     static String MESSAGE_CONTENT_1 = "Simple message content";
     static byte[] MESSAGE_CONTENT_BYTES_1 = MESSAGE_CONTENT_1.getBytes(StandardCharsets.UTF_8);
@@ -78,7 +80,8 @@ class PostgresMailboxMessageDAOTest {
 
         messageDAO.insert(message1, "blobId1").block();
         testee.insert(message1).block();
-        List<MailboxMessage> simpleMailboxMessages = testee.findMessagesByMailboxId(mailboxId)
+        List<SimpleMailboxMessage> simpleMailboxMessages = testee.findMessagesByMailboxId(mailboxId, 100)
+            .map(e -> e.getLeft().build())
             .collectList()
             .block();
         assertThat(simpleMailboxMessages).hasSize(1);
