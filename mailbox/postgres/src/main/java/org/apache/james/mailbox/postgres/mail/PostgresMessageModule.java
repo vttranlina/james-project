@@ -40,7 +40,7 @@ public interface PostgresMessageModule {
     interface MessageTable {
         Table<Record> TABLE_NAME = DSL.table("message");
         Field<UUID> MESSAGE_ID = PostgresMessageModule.MESSAGE_ID;
-        Field<String> BLOB_ID = DSL.field("blob_id", SQLDataType.VARCHAR(200));
+        Field<String> BLOB_ID = DSL.field("blob_id", SQLDataType.VARCHAR(200).notNull());
         Field<String> MIME_TYPE = DSL.field("mime_type", SQLDataType.VARCHAR(200));
         Field<String> MIME_SUBTYPE = DSL.field("mime_subtype", SQLDataType.VARCHAR(200));
         Field<LocalDateTime> INTERNAL_DATE = DSL.field("internal_date", DataTypes.TIMESTAMP);
@@ -82,6 +82,7 @@ public interface PostgresMessageModule {
         Field<Boolean> IS_FLAGGED = DSL.field("is_flagged", SQLDataType.BOOLEAN.nullable(false));
         Field<Boolean> IS_RECENT = DSL.field("is_recent", SQLDataType.BOOLEAN.nullable(false));
         Field<Boolean> IS_SEEN = DSL.field("is_seen", SQLDataType.BOOLEAN.nullable(false));
+        Field<Boolean> IS_USER = DSL.field("is_user", SQLDataType.BOOLEAN.nullable(false));
         Field<String[]> USER_FLAGS = DSL.field("user_flags", DataTypes.STRING_ARRAY);
 
         PostgresTable TABLE = PostgresTable.name(TABLE_NAME.getName())
@@ -96,6 +97,7 @@ public interface PostgresMessageModule {
                 .column(IS_FLAGGED)
                 .column(IS_RECENT)
                 .column(IS_SEEN)
+                .column(IS_USER)
                 .column(USER_FLAGS)
                 .constraint(DSL.primaryKey(MAILBOX_ID, MESSAGE_UID))
                 .comment("Holds mailbox and flags for each message")))

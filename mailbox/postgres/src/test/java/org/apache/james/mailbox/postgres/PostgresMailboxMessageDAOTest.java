@@ -76,7 +76,7 @@ class PostgresMailboxMessageDAOTest {
             .mailboxId(mailboxId)
             .build();
 
-        messageDAO.insert(message1).block();
+        messageDAO.insert(message1, "blobId1").block();
         testee.insert(message1).block();
         List<MailboxMessage> simpleMailboxMessages = testee.findMessagesByMailboxId(mailboxId)
             .collectList()
