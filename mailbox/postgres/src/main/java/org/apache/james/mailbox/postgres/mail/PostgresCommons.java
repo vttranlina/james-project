@@ -64,4 +64,7 @@ public class PostgresCommons {
         .orElse(null);
 
     public static final Function<Field<?>, Field<?>> UNNEST_FIELD = field -> DSL.function("unnest", field.getType().getComponentType(), field);
+
+    public static final int IN_CLAUSE_MAX_SIZE = 100;
+
 }

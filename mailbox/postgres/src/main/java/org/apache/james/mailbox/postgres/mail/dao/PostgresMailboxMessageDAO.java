@@ -21,6 +21,7 @@ package org.apache.james.mailbox.postgres.mail.dao;
 
 
 import static org.apache.james.mailbox.postgres.mail.PostgresCommons.DATE_TO_LOCAL_DATE_TIME;
+import static org.apache.james.mailbox.postgres.mail.PostgresCommons.IN_CLAUSE_MAX_SIZE;
 import static org.apache.james.mailbox.postgres.mail.PostgresCommons.LOCAL_DATE_TIME_DATE_FUNCTION;
 import static org.apache.james.mailbox.postgres.mail.PostgresCommons.TABLE_FIELD;
 import static org.apache.james.mailbox.postgres.mail.PostgresCommons.UNNEST_FIELD;
@@ -33,7 +34,6 @@ import static org.apache.james.mailbox.postgres.mail.PostgresMessageModule.Messa
 import static org.apache.james.mailbox.postgres.mail.PostgresMessageModule.MessageToMailboxTable.IS_FLAGGED;
 import static org.apache.james.mailbox.postgres.mail.PostgresMessageModule.MessageToMailboxTable.IS_RECENT;
 import static org.apache.james.mailbox.postgres.mail.PostgresMessageModule.MessageToMailboxTable.IS_SEEN;
-import static org.apache.james.mailbox.postgres.mail.PostgresMessageModule.MessageToMailboxTable.IS_USER;
 import static org.apache.james.mailbox.postgres.mail.PostgresMessageModule.MessageToMailboxTable.MAILBOX_ID;
 import static org.apache.james.mailbox.postgres.mail.PostgresMessageModule.MessageToMailboxTable.MESSAGE_ID;
 import static org.apache.james.mailbox.postgres.mail.PostgresMessageModule.MessageToMailboxTable.MESSAGE_UID;
@@ -42,7 +42,6 @@ import static org.apache.james.mailbox.postgres.mail.PostgresMessageModule.Messa
 import static org.apache.james.mailbox.postgres.mail.PostgresMessageModule.MessageToMailboxTable.TABLE_NAME;
 import static org.apache.james.mailbox.postgres.mail.PostgresMessageModule.MessageToMailboxTable.THREAD_ID;
 import static org.apache.james.mailbox.postgres.mail.PostgresMessageModule.MessageToMailboxTable.USER_FLAGS;
-import static org.jooq.impl.DSL.unnest;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -53,6 +52,7 @@ import java.util.Optional;
 import java.util.function.Function;
 
 import javax.mail.Flags;
+import javax.mail.Flags.Flag;
 
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.james.backends.postgres.utils.PostgresExecutor;
@@ -82,10 +82,10 @@ import org.jooq.TableOnConditionStep;
 import org.jooq.UpdateConditionStep;
 import org.jooq.impl.DSL;
 
+import com.google.common.collect.Iterables;
+
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-
-import javax.mail.Flags.Flag;
 
 public class PostgresMailboxMessageDAO {
     private static final Function<Record, MessageUid> RECORD_TO_MESSAGE_UID_FUNCTION = record -> MessageUid.of(record.get(MESSAGE_UID));
@@ -172,9 +172,17 @@ public class PostgresMailboxMessageDAO {
     }
 
     public Mono<Void> deleteByMailboxIdAndMessageUids(PostgresMailboxId mailboxId, List<MessageUid> uids) {
-        return postgresExecutor.executeVoid(dslContext -> Mono.from(dslContext.deleteFrom(TABLE_NAME)
+        Function<List<MessageUid>, Mono<Void>> deletePublisherFunction = uidsToDelete -> postgresExecutor.executeVoid(dslContext -> Mono.from(dslContext.deleteFrom(TABLE_NAME)
             .where(MAILBOX_ID.eq(mailboxId.asUuid()))
-            .and(MESSAGE_UID.in(uids.stream().map(MessageUid::asLong).toArray(Long[]::new)))));
+            .and(MESSAGE_UID.in(uidsToDelete.stream().map(MessageUid::asLong).toArray(Long[]::new)))));
+
+        if (uids.size() <= IN_CLAUSE_MAX_SIZE) {
+            return deletePublisherFunction.apply(uids);
+        } else {
+            return Flux.fromIterable(Iterables.partition(uids, IN_CLAUSE_MAX_SIZE))
+                .flatMap(deletePublisherFunction::apply)
+                .then();
+        }
     }
 
     public Mono<Void> deleteByMailboxIdAndMessageUidBetween(PostgresMailboxId mailboxId, MessageUid from, MessageUid to) {
@@ -242,13 +250,19 @@ public class PostgresMailboxMessageDAO {
     }
 
     public Flux<SimpleMailboxMessage.Builder> findMessagesByMailboxIdAndUIDs(PostgresMailboxId mailboxId, List<MessageUid> uids) {
-        return postgresExecutor.executeRows(dslContext -> Flux.from(dslContext.select()
+        Function<List<MessageUid>, Flux<SimpleMailboxMessage.Builder>> queryPublisherFunction = uidsToFetch -> postgresExecutor.executeRows(dslContext -> Flux.from(dslContext.select()
                 .from(MESSAGES_JOIN_MAILBOX_MESSAGES_CONDITION_STEP)
                 .where(MAILBOX_ID.eq(mailboxId.asUuid()))
-                .and(MESSAGE_UID.in(uids.stream().map(MessageUid::asLong).toArray(Long[]::new)))
+                .and(MESSAGE_UID.in(uidsToFetch.stream().map(MessageUid::asLong).toArray(Long[]::new)))
                 .orderBy(DEFAULT_SORT_ORDER_BY)))
             .map(this::toMailboxMessage);
 
+        if (uids.size() <= IN_CLAUSE_MAX_SIZE) {
+            return queryPublisherFunction.apply(uids);
+        } else {
+            return Flux.fromIterable(Iterables.partition(uids, IN_CLAUSE_MAX_SIZE))
+                .flatMap(queryPublisherFunction);
+        }
     }
 
     public Flux<MessageUid> findDeletedMessagesByMailboxId(PostgresMailboxId mailboxId) {
@@ -301,12 +315,19 @@ public class PostgresMailboxMessageDAO {
     }
 
     public Flux<ComposedMessageIdWithMetaData> findMessagesMetadata(PostgresMailboxId mailboxId, List<MessageUid> messageUids) {
-        return postgresExecutor.executeRows(dslContext -> Flux.from(dslContext.select()
+        Function<List<MessageUid>, Flux<ComposedMessageIdWithMetaData>> queryPublisherFunction = uidsToFetch -> postgresExecutor.executeRows(dslContext -> Flux.from(dslContext.select()
                 .from(TABLE_NAME)
                 .where(MAILBOX_ID.eq(mailboxId.asUuid()))
-                .and(MESSAGE_UID.in(messageUids.stream().map(MessageUid::asLong).toArray(Long[]::new)))
+                .and(MESSAGE_UID.in(uidsToFetch.stream().map(MessageUid::asLong).toArray(Long[]::new)))
                 .orderBy(DEFAULT_SORT_ORDER_BY)))
             .map(recordToComposedMessageIdWithMetaData(mailboxId));
+
+        if (messageUids.size() <= IN_CLAUSE_MAX_SIZE) {
+            return queryPublisherFunction.apply(messageUids);
+        } else {
+            return Flux.fromIterable(Iterables.partition(messageUids, IN_CLAUSE_MAX_SIZE))
+                .flatMap(queryPublisherFunction);
+        }
     }
 
 
@@ -388,14 +409,7 @@ public class PostgresMailboxMessageDAO {
                 } else {
                     return updateStatement;
                 }
-            }).map(updateStatement -> {
-                if (updatedFlags.isChanged(Flag.USER)) {
-                    return updateStatement.set(IS_USER, updatedFlags.isModifiedToSet(Flag.USER));
-                } else {
-                    return updateStatement;
-                }
-            })
-            .map(updateStatement -> updateStatement.set(USER_FLAGS, updatedFlags.getNewFlags().getUserFlags()))
+            }).map(updateStatement -> updateStatement.set(USER_FLAGS, updatedFlags.getNewFlags().getUserFlags()))
             .map(updateStatement -> updateStatement.where(MAILBOX_ID.eq(mailboxId.asUuid()))
                 .and(MESSAGE_UID.eq(uid.asLong())))
             .get();
@@ -430,7 +444,7 @@ public class PostgresMailboxMessageDAO {
 
     private ThreadId extractThreadId(Record record) {
         return Optional.ofNullable(record.get(THREAD_ID))
-            .map(threadIdFactory::fromString)
+            .map(threadIdAsUuid -> ThreadId.fromBaseMessageId(PostgresMessageId.Factory.of(threadIdAsUuid)))
             .orElse(ThreadId.fromBaseMessageId(PostgresMessageId.Factory.of(record.get(MESSAGE_ID))));
     }
 
@@ -446,7 +460,6 @@ public class PostgresMailboxMessageDAO {
             .set(IS_FLAGGED, mailboxMessage.isFlagged())
             .set(IS_RECENT, mailboxMessage.isRecent())
             .set(IS_SEEN, mailboxMessage.isSeen())
-            .set(IS_USER, mailboxMessage.createFlags().contains(Flag.USER))
             .set(USER_FLAGS, mailboxMessage.createFlags().getUserFlags())
             .set(SAVE_DATE, mailboxMessage.getSaveDate().map(DATE_TO_LOCAL_DATE_TIME).orElse(null))));
     }

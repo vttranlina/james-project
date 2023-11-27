@@ -75,7 +75,7 @@ public interface PostgresMessageModule {
         Field<Long> MESSAGE_UID = DSL.field("message_uid", SQLDataType.BIGINT.notNull());
         Field<Long> MOD_SEQ = DSL.field("mod_seq", SQLDataType.BIGINT.notNull());
         Field<UUID> MESSAGE_ID = PostgresMessageModule.MESSAGE_ID;
-        Field<String> THREAD_ID = DSL.field("thread_id", SQLDataType.NVARCHAR(255));
+        Field<UUID> THREAD_ID = DSL.field("thread_id", SQLDataType.UUID);
         Field<Boolean> IS_DELETED = DSL.field("is_deleted", SQLDataType.BOOLEAN.nullable(false)
             .defaultValue(DSL.field("false", SQLDataType.BOOLEAN)));
         Field<Boolean> IS_ANSWERED = DSL.field("is_answered", SQLDataType.BOOLEAN.nullable(false));
@@ -83,7 +83,6 @@ public interface PostgresMessageModule {
         Field<Boolean> IS_FLAGGED = DSL.field("is_flagged", SQLDataType.BOOLEAN.nullable(false));
         Field<Boolean> IS_RECENT = DSL.field("is_recent", SQLDataType.BOOLEAN.nullable(false));
         Field<Boolean> IS_SEEN = DSL.field("is_seen", SQLDataType.BOOLEAN.nullable(false));
-        Field<Boolean> IS_USER = DSL.field("is_user", SQLDataType.BOOLEAN.nullable(false));
         Field<String[]> USER_FLAGS = DSL.field("user_flags", DataTypes.STRING_ARRAY);
         Field<LocalDateTime> SAVE_DATE = DSL.field("save_date", DataTypes.TIMESTAMP);
 
@@ -101,7 +100,6 @@ public interface PostgresMessageModule {
                 .column(IS_FLAGGED)
                 .column(IS_RECENT)
                 .column(IS_SEEN)
-                .column(IS_USER)
                 .column(USER_FLAGS)
                 .column(SAVE_DATE)
                 .constraint(DSL.primaryKey(MAILBOX_ID, MESSAGE_UID))
