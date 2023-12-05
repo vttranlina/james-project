@@ -34,8 +34,8 @@ import org.apache.james.utils.SMTPMessageSender;
 import org.apache.james.utils.TestIMAPClient;
 import org.awaitility.Awaitility;
 import org.awaitility.core.ConditionFactory;
-import org.junit.Test;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.google.common.base.Strings;
@@ -74,7 +74,7 @@ class PostgresJamesServerTest implements JamesServerConcreteContract {
     }
     
     @Test
-    void jpaGuiceServerShouldUpdateQuota(GuiceJamesServer jamesServer) throws Exception {
+    void guiceServerShouldUpdateQuota(GuiceJamesServer jamesServer) throws Exception {
         jamesServer.getProbe(DataProbeImpl.class)
             .fluent()
             .addDomain(DOMAIN)

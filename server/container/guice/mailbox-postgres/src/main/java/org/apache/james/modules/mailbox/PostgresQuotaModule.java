@@ -19,6 +19,8 @@
 
 package org.apache.james.modules.mailbox;
 
+import org.apache.james.backends.postgres.PostgresModule;
+import org.apache.james.backends.postgres.quota.PostgresQuotaCurrentValueDAO;
 import org.apache.james.events.EventListener;
 import org.apache.james.mailbox.postgres.quota.JPAPerUserMaxQuotaManager;
 import org.apache.james.mailbox.postgres.quota.PostgresCurrentQuotaManager;
@@ -41,9 +43,13 @@ public class PostgresQuotaModule extends AbstractModule {
 
     @Override
     protected void configure() {
+        Multibinder<PostgresModule> postgresDataDefinitions = Multibinder.newSetBinder(binder(), PostgresModule.class);
+        postgresDataDefinitions.addBinding().toInstance(org.apache.james.backends.postgres.quota.PostgresQuotaModule.MODULE);
+
         bind(DefaultUserQuotaRootResolver.class).in(Scopes.SINGLETON);
         bind(JPAPerUserMaxQuotaManager.class).in(Scopes.SINGLETON);
         bind(StoreQuotaManager.class).in(Scopes.SINGLETON);
+        bind(PostgresQuotaCurrentValueDAO.class).in(Scopes.SINGLETON);
         bind(PostgresCurrentQuotaManager.class).in(Scopes.SINGLETON);
 
         bind(UserQuotaRootResolver.class).to(DefaultUserQuotaRootResolver.class);
