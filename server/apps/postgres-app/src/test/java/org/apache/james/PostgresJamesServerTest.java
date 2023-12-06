@@ -26,6 +26,7 @@ import static org.awaitility.Durations.ONE_MINUTE;
 
 import org.apache.james.backends.postgres.PostgresExtension;
 import org.apache.james.core.quota.QuotaSizeLimit;
+import org.apache.james.modules.BlobMemoryModule;
 import org.apache.james.modules.QuotaProbesImpl;
 import org.apache.james.modules.protocols.ImapGuiceProbe;
 import org.apache.james.modules.protocols.SmtpGuiceProbe;
@@ -51,6 +52,7 @@ class PostgresJamesServerTest implements JamesServerConcreteContract {
             .usersRepository(DEFAULT)
             .build())
         .server(configuration -> PostgresJamesServerMain.createServer(configuration)
+            .overrideWith(new BlobMemoryModule())
             .overrideWith(new TestJPAConfigurationModule(postgresExtension)))
         .extension(postgresExtension)
         .lifeCycle(JamesServerExtension.Lifecycle.PER_CLASS)

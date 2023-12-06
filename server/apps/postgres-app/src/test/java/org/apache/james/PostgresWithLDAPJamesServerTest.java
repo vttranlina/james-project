@@ -28,6 +28,7 @@ import java.io.IOException;
 import org.apache.commons.net.imap.IMAPClient;
 import org.apache.james.backends.postgres.PostgresExtension;
 import org.apache.james.data.LdapTestExtension;
+import org.apache.james.modules.BlobMemoryModule;
 import org.apache.james.modules.protocols.ImapGuiceProbe;
 import org.apache.james.user.ldap.DockerLdapSingleton;
 import org.junit.jupiter.api.Test;
@@ -44,6 +45,7 @@ class PostgresWithLDAPJamesServerTest {
             .usersRepository(LDAP)
             .build())
         .server(configuration -> PostgresJamesServerMain.createServer(configuration)
+            .overrideWith(new BlobMemoryModule())
             .overrideWith(new TestJPAConfigurationModule(postgresExtension)))
         .lifeCycle(JamesServerExtension.Lifecycle.PER_CLASS)
         .extension(new LdapTestExtension())

@@ -29,6 +29,10 @@ import org.apache.james.adapter.mailbox.QuotaUsernameChangeTaskStep;
 import org.apache.james.adapter.mailbox.UserRepositoryAuthenticator;
 import org.apache.james.adapter.mailbox.UserRepositoryAuthorizator;
 import org.apache.james.backends.postgres.PostgresModule;
+import org.apache.james.blob.api.BlobStore;
+import org.apache.james.blob.api.BlobStoreDAO;
+import org.apache.james.blob.api.MetricableBlobStore;
+import org.apache.james.blob.objectstorage.aws.S3BlobStoreDAO;
 import org.apache.james.events.EventListener;
 import org.apache.james.mailbox.AttachmentContentLoader;
 import org.apache.james.mailbox.Authenticator;
@@ -61,9 +65,11 @@ import org.apache.james.mailbox.store.mail.MessageMapperFactory;
 import org.apache.james.mailbox.store.mail.NaiveThreadIdGuessingAlgorithm;
 import org.apache.james.mailbox.store.mail.ThreadIdGuessingAlgorithm;
 import org.apache.james.mailbox.store.user.SubscriptionMapperFactory;
-import org.apache.james.modules.BlobMemoryModule;
 import org.apache.james.modules.data.JPAEntityManagerModule;
 import org.apache.james.modules.data.PostgresCommonModule;
+import org.apache.james.modules.objectstorage.DefaultBucketModule;
+import org.apache.james.modules.objectstorage.S3BlobStoreModule;
+import org.apache.james.server.blob.deduplication.PassThroughBlobStore;
 import org.apache.james.user.api.DeleteUserDataTaskStep;
 import org.apache.james.user.api.UsernameChangeTaskStep;
 import org.apache.james.utils.MailboxManagerDefinition;
@@ -71,16 +77,29 @@ import org.apache.mailbox.tools.indexer.ReIndexerImpl;
 
 import com.google.inject.AbstractModule;
 import com.google.inject.Inject;
+import com.google.inject.Module;
 import com.google.inject.Scopes;
 import com.google.inject.multibindings.Multibinder;
 import com.google.inject.name.Names;
+import com.google.inject.util.Modules;
 
 public class PostgresMailboxModule extends AbstractModule {
+    private static final Module BLOB_MODULE = Modules.combine(
+        new BlobStoreAPIModule(),
+        new S3BlobStoreModule(),
+        new DefaultBucketModule(),
+        binder -> {
+            binder.bind(BlobStoreDAO.class).to(S3BlobStoreDAO.class);
+            binder.bind(BlobStore.class)
+                .annotatedWith(Names.named(MetricableBlobStore.BLOB_STORE_IMPLEMENTATION))
+                .to(PassThroughBlobStore.class);
+        }
+    );
 
     @Override
     protected void configure() {
         install(new PostgresCommonModule());
-        install(new BlobMemoryModule());
+        install(BLOB_MODULE);
 
         Multibinder<PostgresModule> postgresDataDefinitions = Multibinder.newSetBinder(binder(), PostgresModule.class);
         postgresDataDefinitions.addBinding().toInstance(PostgresMailboxAggregateModule.MODULE);

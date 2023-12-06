@@ -26,6 +26,7 @@ import java.util.EnumSet;
 
 import org.apache.james.backends.postgres.PostgresExtension;
 import org.apache.james.mailbox.MailboxManager;
+import org.apache.james.modules.BlobMemoryModule;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
@@ -51,6 +52,7 @@ class JamesCapabilitiesServerTest {
             .usersRepository(DEFAULT)
             .build())
         .server(configuration -> PostgresJamesServerMain.createServer(configuration)
+            .overrideWith(new BlobMemoryModule())
             .overrideWith(new TestJPAConfigurationModule(postgresExtension))
             .overrideWith(binder -> binder.bind(MailboxManager.class).toInstance(mailboxManager())))
         .extension(postgresExtension)
