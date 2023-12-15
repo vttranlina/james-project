@@ -108,6 +108,51 @@ public interface PostgresMessageModule {
         Field<String[]> USER_FLAGS = DSL.field("user_flags", DataTypes.STRING_ARRAY);
         Field<LocalDateTime> SAVE_DATE = DSL.field("save_date", DataTypes.TIMESTAMP);
 
+        String CREATE_MESSAGE_MAILBOX_USER_FLAGS_REMOVE_FUNCTION =
+            "\n" +
+                "CREATE OR REPLACE FUNCTION message_mailbox_user_flags_remove(\n" +
+                "    p_remove_flags text[],\n" +
+                "    p_new_mod_seq bigint,\n" +
+                "    p_mailbox_id uuid,\n" +
+                "    p_message_uid bigint)\n" +
+                "    RETURNS TABLE\n" +
+                "            (\n" +
+                "                updated_user_flags text[],\n" +
+                "                is_deleted         boolean,\n" +
+                "                is_answered        boolean,\n" +
+                "                is_draft           boolean,\n" +
+                "                is_flagged         boolean,\n" +
+                "                is_recent          boolean,\n" +
+                "                is_seen            boolean,\n" +
+                "                mod_seq            bigint\n" +
+                "            )\n" +
+                "AS\n" +
+                "$$\n" +
+                "DECLARE\n" +
+                "    updated_row message_mailbox%ROWTYPE;\n" +
+                "BEGIN\n" +
+                "    UPDATE message_mailbox\n" +
+                "    SET user_flags = (select array_agg(elements)\n" +
+                "                      from (select unnest(user_flags)\n" +
+                "                            from message_mailbox\n" +
+                "                            where mailbox_id = p_mailbox_id\n" +
+                "                              and message_uid = p_message_uid\n" +
+                "                            except\n" +
+                "                            select unnest(p_remove_flags)) t (elements)),\n" +
+                "        mod_seq = p_new_mod_seq\n" +
+                "    where mailbox_id = p_mailbox_id and message_uid = p_message_uid\n" +
+                "    RETURNING * INTO updated_row;\n" +
+                "    return query select updated_row.user_flags,\n" +
+                "                        updated_row.is_deleted,\n" +
+                "                        updated_row.is_answered,\n" +
+                "                        updated_row.is_draft,\n" +
+                "                        updated_row.is_flagged,\n" +
+                "                        updated_row.is_recent,\n" +
+                "                        updated_row.is_seen,\n" +
+                "                        updated_row.mod_seq;\n" +
+                "END;\n" +
+                "$$ LANGUAGE plpgsql;";
+
 
         PostgresTable TABLE = PostgresTable.name(TABLE_NAME.getName())
             .createTableStep(((dsl, tableName) -> dsl.createTableIfNotExists(tableName)
@@ -130,6 +175,7 @@ public interface PostgresMessageModule {
                     foreignKey(MESSAGE_ID).references(MessageTable.TABLE_NAME, MessageTable.MESSAGE_ID))
                 .comment("Holds mailbox and flags for each message")))
             .supportsRowLevelSecurity()
+            .addAdditionalAlterQueries(CREATE_MESSAGE_MAILBOX_USER_FLAGS_REMOVE_FUNCTION)
             .build();
 
         PostgresIndex MESSAGE_ID_INDEX = PostgresIndex.name("message_mailbox_message_id_index")

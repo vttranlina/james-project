@@ -45,10 +45,13 @@ import static org.apache.james.mailbox.postgres.mail.dao.PostgresMailboxMessageD
 import static org.apache.james.mailbox.postgres.mail.dao.PostgresMailboxMessageDAOUtils.FETCH_TYPE_TO_FETCH_STRATEGY;
 import static org.apache.james.mailbox.postgres.mail.dao.PostgresMailboxMessageDAOUtils.MESSAGE_METADATA_FIELDS_REQUIRE;
 import static org.apache.james.mailbox.postgres.mail.dao.PostgresMailboxMessageDAOUtils.RECORD_TO_COMPOSED_MESSAGE_ID_WITH_META_DATA_FUNCTION;
+import static org.apache.james.mailbox.postgres.mail.dao.PostgresMailboxMessageDAOUtils.RECORD_TO_FLAGS_FUNCTION;
 import static org.apache.james.mailbox.postgres.mail.dao.PostgresMailboxMessageDAOUtils.RECORD_TO_MESSAGE_METADATA_FUNCTION;
 import static org.apache.james.mailbox.postgres.mail.dao.PostgresMailboxMessageDAOUtils.RECORD_TO_MESSAGE_UID_FUNCTION;
 
+import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
@@ -83,6 +86,7 @@ import org.jooq.TableOnConditionStep;
 import org.jooq.UpdateConditionStep;
 import org.jooq.UpdateSetStep;
 import org.jooq.impl.DSL;
+import org.jooq.util.postgres.PostgresDSL;
 
 import com.google.common.collect.Iterables;
 
@@ -313,9 +317,87 @@ public class PostgresMailboxMessageDAO {
             .map(RECORD_TO_COMPOSED_MESSAGE_ID_WITH_META_DATA_FUNCTION);
     }
 
+    public Mono<Void> updateFlag_old(PostgresMailboxId mailboxId, MessageUid uid, UpdatedFlags updatedFlags) {
+        return postgresExecutor.executeVoid(dslContext ->
+            Mono.from(buildUpdateFlagStatement(dslContext, updatedFlags, mailboxId, uid)));
+    }
+
     public Mono<Void> updateFlag(PostgresMailboxId mailboxId, MessageUid uid, UpdatedFlags updatedFlags) {
         return postgresExecutor.executeVoid(dslContext ->
             Mono.from(buildUpdateFlagStatement(dslContext, updatedFlags, mailboxId, uid)));
+    }
+
+
+    public Mono<Flags> replaceFlags(PostgresMailboxId mailboxId, MessageUid uid, Flags newFlags, ModSeq newModSeq) {
+        return postgresExecutor.executeRow(dslContext -> Mono.from(buildReplaceFlagsStatement(dslContext, newFlags, mailboxId, uid, newModSeq)
+                .returning(MESSAGE_METADATA_FIELDS_REQUIRE)))
+            .map(RECORD_TO_FLAGS_FUNCTION);
+    }
+
+    public Mono<Flags> addFlags(PostgresMailboxId mailboxId, MessageUid uid, Flags appendFlags, ModSeq newModSeq) {
+        return postgresExecutor.executeRow(dslContext -> Mono.from(buildAddFlagsStatement(dslContext, appendFlags, mailboxId, uid, newModSeq)
+                .returning(MESSAGE_METADATA_FIELDS_REQUIRE)))
+            .map(RECORD_TO_FLAGS_FUNCTION);
+    }
+
+    private UpdateConditionStep<Record> buildAddFlagsStatement(DSLContext dslContext, Flags addFlags,
+                                                               PostgresMailboxId mailboxId, MessageUid uid, ModSeq newModSeq) {
+        AtomicReference<UpdateSetStep<Record>> updateStatement = new AtomicReference<>(dslContext.update(TABLE_NAME));
+
+        BOOLEAN_FLAGS_MAPPING.forEach((flagColumn, flagMapped) -> {
+            if (addFlags.contains(flagMapped)) {
+                updateStatement.getAndUpdate(currentStatement -> currentStatement.set(flagColumn, true));
+            }
+        });
+
+        return updateStatement.get()
+            .set(USER_FLAGS, PostgresDSL.arrayCat(USER_FLAGS, addFlags.getUserFlags()))
+            .set(MOD_SEQ, newModSeq.asLong())
+            .where(MAILBOX_ID.eq(mailboxId.asUuid()))
+            .and(MESSAGE_UID.eq(uid.asLong()));
+    }
+
+    private UpdateConditionStep<Record> buildReplaceFlagsStatement(DSLContext dslContext, Flags newFlags,
+                                                               PostgresMailboxId mailboxId, MessageUid uid, ModSeq newModSeq) {
+        AtomicReference<UpdateSetStep<Record>> updateStatement = new AtomicReference<>(dslContext.update(TABLE_NAME));
+
+        BOOLEAN_FLAGS_MAPPING.forEach((flagColumn, flagMapped) -> {
+            if (newFlags.contains(flagMapped)) {
+                updateStatement.getAndUpdate(currentStatement -> currentStatement.set(flagColumn, true));
+            }
+        });
+
+        return updateStatement.get()
+            .set(USER_FLAGS, newFlags.getUserFlags())
+            .set(MOD_SEQ, newModSeq.asLong())
+            .where(MAILBOX_ID.eq(mailboxId.asUuid()))
+            .and(MESSAGE_UID.eq(uid.asLong()));
+    }
+
+
+    public Mono<Flags> removeFlags(PostgresMailboxId mailboxId, MessageUid uid, Flags removeFlags, ModSeq newModSeq) {
+        return postgresExecutor.connection()
+            .flatMap(c -> Mono.from(c.createStatement("select * from message_mailbox_user_flags_remove($1,$2,$3,$4)")
+                .bind("$1", removeFlags.getUserFlags())
+                .bind("$2", newModSeq.asLong())
+                .bind("$3", mailboxId.asUuid())
+                .bind("$4", uid.asLong())
+                .execute()))
+            .flatMapMany(pgRowSet -> pgRowSet.map((row, rowMetadata) -> {
+                Flags flags = new Flags();
+                BOOLEAN_FLAGS_MAPPING.forEach((flagColumn, flagMapped) -> {
+                    if (Boolean.TRUE.equals(row.get(flagColumn.getName(), Boolean.class))) {
+                        flags.add(flagMapped);
+                    }
+                });
+
+                Optional.ofNullable(row.get("updated_user_flags", String[].class))
+                    .stream()
+                    .flatMap(Arrays::stream)
+                    .forEach(flags::add);
+                return flags;
+            }))
+            .last();
     }
 
     public Mono<Flags> listDistinctUserFlags(PostgresMailboxId mailboxId) {
