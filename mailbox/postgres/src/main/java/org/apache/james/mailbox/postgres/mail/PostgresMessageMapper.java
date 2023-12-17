@@ -320,31 +320,6 @@ public class PostgresMessageMapper implements MessageMapper {
                 .flatMap(messageMetaData -> updateFlags(messageMetaData, flagsUpdateCalculator, newModSeq)));
     }
 
-    private Mono<UpdatedFlags> updateFlags2(ComposedMessageIdWithMetaData currentMetaData,
-                                           FlagsUpdateCalculator flagsUpdateCalculator,
-                                           ModSeq newModSeq) {
-        Flags oldFlags = currentMetaData.getFlags();
-        Flags newFlags = flagsUpdateCalculator.buildNewFlags(oldFlags);
-
-        ComposedMessageId composedMessageId = currentMetaData.getComposedMessageId();
-
-        return Mono.just(UpdatedFlags.builder()
-                .messageId(composedMessageId.getMessageId())
-                .oldFlags(oldFlags)
-                .newFlags(newFlags)
-                .uid(composedMessageId.getUid()))
-            .flatMap(builder -> {
-                if (oldFlags.equals(newFlags)) {
-                    return Mono.just(builder.modSeq(currentMetaData.getModSeq())
-                        .build());
-                }
-                return Mono.fromCallable(() -> builder.modSeq(newModSeq).build())
-                    .flatMap(updatedFlags -> mailboxMessageDAO.updateFlag((PostgresMailboxId) composedMessageId.getMailboxId(), composedMessageId.getUid(), updatedFlags)
-                        .thenReturn(updatedFlags));
-            });
-    }
-
-
     private Mono<UpdatedFlags> updateFlags(ComposedMessageIdWithMetaData currentMetaData,
                                             FlagsUpdateCalculator flagsUpdateCalculator,
                                             ModSeq newModSeq) {

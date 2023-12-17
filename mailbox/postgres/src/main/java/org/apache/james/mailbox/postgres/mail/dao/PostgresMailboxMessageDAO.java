@@ -21,6 +21,7 @@ package org.apache.james.mailbox.postgres.mail.dao;
 
 
 import static org.apache.james.backends.postgres.PostgresCommons.DATE_TO_LOCAL_DATE_TIME;
+import static org.apache.james.backends.postgres.PostgresCommons.EMPTY_STRING_ARRAY_FIELD;
 import static org.apache.james.backends.postgres.PostgresCommons.IN_CLAUSE_MAX_SIZE;
 import static org.apache.james.backends.postgres.PostgresCommons.UNNEST_FIELD;
 import static org.apache.james.backends.postgres.PostgresCommons.tableField;
@@ -41,6 +42,7 @@ import static org.apache.james.mailbox.postgres.mail.PostgresMessageModule.Messa
 import static org.apache.james.mailbox.postgres.mail.PostgresMessageModule.MessageToMailboxTable.TABLE_NAME;
 import static org.apache.james.mailbox.postgres.mail.PostgresMessageModule.MessageToMailboxTable.THREAD_ID;
 import static org.apache.james.mailbox.postgres.mail.PostgresMessageModule.MessageToMailboxTable.USER_FLAGS;
+import static org.apache.james.mailbox.postgres.mail.PostgresMessageModule.MessageToMailboxTable.USER_FLAGS_REMOVE_FUNCTION_NAME;
 import static org.apache.james.mailbox.postgres.mail.dao.PostgresMailboxMessageDAOUtils.BOOLEAN_FLAGS_MAPPING;
 import static org.apache.james.mailbox.postgres.mail.dao.PostgresMailboxMessageDAOUtils.FETCH_TYPE_TO_FETCH_STRATEGY;
 import static org.apache.james.mailbox.postgres.mail.dao.PostgresMailboxMessageDAOUtils.MESSAGE_METADATA_FIELDS_REQUIRE;
@@ -49,14 +51,12 @@ import static org.apache.james.mailbox.postgres.mail.dao.PostgresMailboxMessageD
 import static org.apache.james.mailbox.postgres.mail.dao.PostgresMailboxMessageDAOUtils.RECORD_TO_MESSAGE_METADATA_FUNCTION;
 import static org.apache.james.mailbox.postgres.mail.dao.PostgresMailboxMessageDAOUtils.RECORD_TO_MESSAGE_UID_FUNCTION;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
 import javax.mail.Flags;
-import javax.mail.Flags.Flag;
 
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.james.backends.postgres.utils.PostgresExecutor;
@@ -65,7 +65,6 @@ import org.apache.james.mailbox.ModSeq;
 import org.apache.james.mailbox.model.ComposedMessageIdWithMetaData;
 import org.apache.james.mailbox.model.MessageMetaData;
 import org.apache.james.mailbox.model.MessageRange;
-import org.apache.james.mailbox.model.UpdatedFlags;
 import org.apache.james.mailbox.postgres.PostgresMailboxId;
 import org.apache.james.mailbox.postgres.PostgresMessageId;
 import org.apache.james.mailbox.postgres.mail.PostgresMessageModule.MessageTable;
@@ -76,6 +75,7 @@ import org.apache.james.mailbox.store.mail.model.impl.SimpleMailboxMessage;
 import org.apache.james.util.streams.Limit;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
+import org.jooq.Field;
 import org.jooq.Name;
 import org.jooq.Record;
 import org.jooq.Record1;
@@ -317,17 +317,6 @@ public class PostgresMailboxMessageDAO {
             .map(RECORD_TO_COMPOSED_MESSAGE_ID_WITH_META_DATA_FUNCTION);
     }
 
-    public Mono<Void> updateFlag_old(PostgresMailboxId mailboxId, MessageUid uid, UpdatedFlags updatedFlags) {
-        return postgresExecutor.executeVoid(dslContext ->
-            Mono.from(buildUpdateFlagStatement(dslContext, updatedFlags, mailboxId, uid)));
-    }
-
-    public Mono<Void> updateFlag(PostgresMailboxId mailboxId, MessageUid uid, UpdatedFlags updatedFlags) {
-        return postgresExecutor.executeVoid(dslContext ->
-            Mono.from(buildUpdateFlagStatement(dslContext, updatedFlags, mailboxId, uid)));
-    }
-
-
     public Mono<Flags> replaceFlags(PostgresMailboxId mailboxId, MessageUid uid, Flags newFlags, ModSeq newModSeq) {
         return postgresExecutor.executeRow(dslContext -> Mono.from(buildReplaceFlagsStatement(dslContext, newFlags, mailboxId, uid, newModSeq)
                 .returning(MESSAGE_METADATA_FIELDS_REQUIRE)))
@@ -336,6 +325,12 @@ public class PostgresMailboxMessageDAO {
 
     public Mono<Flags> addFlags(PostgresMailboxId mailboxId, MessageUid uid, Flags appendFlags, ModSeq newModSeq) {
         return postgresExecutor.executeRow(dslContext -> Mono.from(buildAddFlagsStatement(dslContext, appendFlags, mailboxId, uid, newModSeq)
+                .returning(MESSAGE_METADATA_FIELDS_REQUIRE)))
+            .map(RECORD_TO_FLAGS_FUNCTION);
+    }
+
+    public Mono<Flags> removeFlags(PostgresMailboxId mailboxId, MessageUid uid, Flags removeFlags, ModSeq newModSeq) {
+        return postgresExecutor.executeRow(dslContext -> Mono.from(buildRemoveFlagsStatement(dslContext, removeFlags, mailboxId, uid, newModSeq)
                 .returning(MESSAGE_METADATA_FIELDS_REQUIRE)))
             .map(RECORD_TO_FLAGS_FUNCTION);
     }
@@ -362,9 +357,7 @@ public class PostgresMailboxMessageDAO {
         AtomicReference<UpdateSetStep<Record>> updateStatement = new AtomicReference<>(dslContext.update(TABLE_NAME));
 
         BOOLEAN_FLAGS_MAPPING.forEach((flagColumn, flagMapped) -> {
-            if (newFlags.contains(flagMapped)) {
-                updateStatement.getAndUpdate(currentStatement -> currentStatement.set(flagColumn, true));
-            }
+            updateStatement.getAndUpdate(currentStatement -> currentStatement.set(flagColumn, newFlags.contains(flagMapped)));
         });
 
         return updateStatement.get()
@@ -374,30 +367,29 @@ public class PostgresMailboxMessageDAO {
             .and(MESSAGE_UID.eq(uid.asLong()));
     }
 
+    private UpdateConditionStep<Record> buildRemoveFlagsStatement(DSLContext dslContext, Flags removeFlags,
+                                                               PostgresMailboxId mailboxId, MessageUid uid, ModSeq newModSeq) {
+        AtomicReference<UpdateSetStep<Record>> updateStatement = new AtomicReference<>(dslContext.update(TABLE_NAME));
 
-    public Mono<Flags> removeFlags(PostgresMailboxId mailboxId, MessageUid uid, Flags removeFlags, ModSeq newModSeq) {
-        return postgresExecutor.connection()
-            .flatMap(c -> Mono.from(c.createStatement("select * from message_mailbox_user_flags_remove($1,$2,$3,$4)")
-                .bind("$1", removeFlags.getUserFlags())
-                .bind("$2", newModSeq.asLong())
-                .bind("$3", mailboxId.asUuid())
-                .bind("$4", uid.asLong())
-                .execute()))
-            .flatMapMany(pgRowSet -> pgRowSet.map((row, rowMetadata) -> {
-                Flags flags = new Flags();
-                BOOLEAN_FLAGS_MAPPING.forEach((flagColumn, flagMapped) -> {
-                    if (Boolean.TRUE.equals(row.get(flagColumn.getName(), Boolean.class))) {
-                        flags.add(flagMapped);
-                    }
-                });
+        BOOLEAN_FLAGS_MAPPING.forEach((flagColumn, flagMapped) -> {
+            if (removeFlags.contains(flagMapped)) {
+                updateStatement.getAndUpdate(currentStatement -> currentStatement.set(flagColumn, false));
+            }
+        });
 
-                Optional.ofNullable(row.get("updated_user_flags", String[].class))
-                    .stream()
-                    .flatMap(Arrays::stream)
-                    .forEach(flags::add);
-                return flags;
-            }))
-            .last();
+        Field<String[]> removeFlagsAsFields = Optional.ofNullable(removeFlags.getUserFlags())
+            .filter(flags -> flags.length > 0)
+            .map(DSL::array)
+            .orElse(EMPTY_STRING_ARRAY_FIELD);
+
+        return updateStatement.get()
+            .set(USER_FLAGS, DSL.function(USER_FLAGS_REMOVE_FUNCTION_NAME, String[].class,
+                removeFlagsAsFields,
+                DSL.inline(mailboxId.asUuid()),
+                DSL.inline(uid.asLong())))
+            .set(MOD_SEQ, newModSeq.asLong())
+            .where(MAILBOX_ID.eq(mailboxId.asUuid()))
+            .and(MESSAGE_UID.eq(uid.asLong()));
     }
 
     public Mono<Flags> listDistinctUserFlags(PostgresMailboxId mailboxId) {
@@ -411,28 +403,6 @@ public class PostgresMailboxMessageDAO {
                 flagList.forEach(flags::add);
                 return flags;
             });
-    }
-
-    private UpdateConditionStep<Record> buildUpdateFlagStatement(DSLContext dslContext, UpdatedFlags updatedFlags,
-                                                                 PostgresMailboxId mailboxId, MessageUid uid) {
-        AtomicReference<UpdateSetStep<Record>> updateStatement = new AtomicReference<>(dslContext.update(TABLE_NAME));
-
-        BOOLEAN_FLAGS_MAPPING.forEach((flagColumn, flagMapped) -> {
-            if (updatedFlags.isChanged(flagMapped)) {
-                updateStatement.getAndUpdate(currentStatement -> {
-                    if (flagMapped.equals(Flag.RECENT)) {
-                        return currentStatement.set(flagColumn, updatedFlags.getNewFlags().contains(Flag.RECENT));
-                    }
-                    return currentStatement.set(flagColumn, updatedFlags.isModifiedToSet(flagMapped));
-                });
-            }
-        });
-
-        return updateStatement.get()
-            .set(USER_FLAGS, updatedFlags.getNewFlags().getUserFlags())
-            .set(MOD_SEQ, updatedFlags.getModSeq().asLong())
-            .where(MAILBOX_ID.eq(mailboxId.asUuid()))
-            .and(MESSAGE_UID.eq(uid.asLong()));
     }
 
     public Flux<MessageMetaData> resetRecentFlag(PostgresMailboxId mailboxId, List<MessageUid> uids, ModSeq newModSeq) {

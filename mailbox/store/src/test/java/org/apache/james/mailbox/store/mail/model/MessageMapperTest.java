@@ -1123,7 +1123,7 @@ public abstract class MessageMapperTest {
 
     @Test
     void getApplicableFlagShouldHaveNotEffectWhenUnsetMessageFlagThenIncrementalApplicableFlags() throws Exception {
-        Assume.assumeTrue(mapperProvider.getSupportedCapabilities().contains(MapperProvider.Capabilities.THREAD_SAFE_FLAGS_UPDATE));
+        Assume.assumeTrue(mapperProvider.getSupportedCapabilities().contains(MapperProvider.Capabilities.INCREMENTAL_APPLICABLE_FLAGS));
         String customFlag1 = "custom1";
         String customFlag2 = "custom2";
         message1.setFlags(new Flags(customFlag1));
