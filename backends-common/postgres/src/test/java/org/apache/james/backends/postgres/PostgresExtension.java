@@ -68,6 +68,7 @@ public class PostgresExtension implements GuiceModuleTestExtension {
     private PostgresExecutor postgresExecutor;
     private PostgresqlConnectionFactory connectionFactory;
     private PostgresExecutor.Factory executorFactory;
+    private Connection superConnection;
 
     public void pause() {
         PG_CONTAINER.getDockerClient().pauseContainerCmd(PG_CONTAINER.getContainerId())
@@ -128,15 +129,21 @@ public class PostgresExtension implements GuiceModuleTestExtension {
             .rowLevelSecurityEnabled(rlsEnabled)
             .build();
 
-        connectionFactory = new PostgresqlConnectionFactory(PostgresqlConnectionConfiguration.builder()
+        PostgresqlConnectionConfiguration.Builder connectionConfigurationBuilder = PostgresqlConnectionConfiguration.builder()
             .host(postgresConfiguration.getUri().getHost())
             .port(postgresConfiguration.getUri().getPort())
+            .database(postgresConfiguration.getDatabaseName())
+            .schema(postgresConfiguration.getDatabaseSchema());
+
+        connectionFactory = new PostgresqlConnectionFactory(connectionConfigurationBuilder
             .username(postgresConfiguration.getCredential().getUsername())
             .password(postgresConfiguration.getCredential().getPassword())
-            .database(postgresConfiguration.getDatabaseName())
-            .schema(postgresConfiguration.getDatabaseSchema())
             .build());
 
+        superConnection = new PostgresqlConnectionFactory(connectionConfigurationBuilder
+            .username(DEFAULT_DATABASE.dbUser())
+            .password(DEFAULT_DATABASE.dbPassword())
+            .build()).create().block();
 
         if (rlsEnabled) {
             executorFactory = new PostgresExecutor.Factory(new DomainImplPostgresConnectionFactory(connectionFactory));
@@ -152,6 +159,7 @@ public class PostgresExtension implements GuiceModuleTestExtension {
     @Override
     public void afterAll(ExtensionContext extensionContext) {
         disposePostgresSession();
+        Mono.from(superConnection.close()).block();
     }
 
     private void disposePostgresSession() {
@@ -190,6 +198,10 @@ public class PostgresExtension implements GuiceModuleTestExtension {
 
     public Mono<Connection> getConnection() {
         return postgresExecutor.connection();
+    }
+
+    public Connection superConnection() {
+        return superConnection;
     }
 
     public PostgresExecutor getPostgresExecutor() {

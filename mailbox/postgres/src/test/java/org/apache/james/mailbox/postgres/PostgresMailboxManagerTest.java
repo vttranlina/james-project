@@ -24,6 +24,7 @@ import static org.mockito.Mockito.spy;
 import java.util.Optional;
 
 import org.apache.james.backends.postgres.PostgresExtension;
+import org.apache.james.core.Username;
 import org.apache.james.events.EventBus;
 import org.apache.james.mailbox.MailboxManagerTest;
 import org.apache.james.mailbox.MailboxSession;
@@ -59,7 +60,7 @@ class PostgresMailboxManagerTest extends MailboxManagerTest<PostgresMailboxManag
     }
 
     @RegisterExtension
-    static PostgresExtension postgresExtension = PostgresExtension.withoutRowLevelSecurity(PostgresMailboxAggregateModule.MODULE);
+    static PostgresExtension postgresExtension = PostgresExtension.withRowLevelSecurity(PostgresMailboxAggregateModule.MODULE);
 
     Optional<PostgresMailboxManager> mailboxManager = Optional.empty();
 
@@ -95,10 +96,11 @@ class PostgresMailboxManagerTest extends MailboxManagerTest<PostgresMailboxManag
 
         @BeforeEach
         void setUp() throws Exception {
+            Username userHasDomain = Username.of("userHasDomain@domain1.tld");
             mailboxManager = provideMailboxManager();
-            session = mailboxManager.createSystemSession(USER_1);
+            session = mailboxManager.createSystemSession(userHasDomain);
             inbox = MailboxPath.inbox(session);
-            newPath = MailboxPath.forUser(USER_1, "specialMailbox");
+            newPath = MailboxPath.forUser(userHasDomain, "specialMailbox");
 
             inboxId = mailboxManager.createMailbox(inbox, session).get();
             inboxManager = mailboxManager.getMailbox(inbox, session);
@@ -123,9 +125,18 @@ class PostgresMailboxManagerTest extends MailboxManagerTest<PostgresMailboxManag
                 softly.assertThat(postgresMessageDAO.getBlobId(messageId).blockOptional())
                     .isEmpty();
 
-                softly.assertThat(postgresMailboxMessageDAO.countTotalMessagesByMailboxId(mailboxId).block())
+                softly.assertThat(countTotalMessageMailboxByRawQuery(mailboxId))
                     .isEqualTo(0);
             });
+        }
+
+        int countTotalMessageMailboxByRawQuery(PostgresMailboxId mailboxId) {
+            return Flux.from(postgresExtension.superConnection().createStatement("SELECT count(*) from message_mailbox where mailbox_id = $1")
+                    .bind("$1", mailboxId.asUuid())
+                    .execute())
+                .flatMap(result -> result.map((row, rowMetaData) -> row.get("count", Integer.class)))
+                .single()
+                .block();
         }
 
         @Test
@@ -193,7 +204,7 @@ class PostgresMailboxManagerTest extends MailboxManagerTest<PostgresMailboxManag
                 softly.assertThat(postgresMessageDAO.getBlobId(messageId).blockOptional())
                     .isEmpty();
 
-                softly.assertThat(postgresMailboxMessageDAO.countTotalMessagesByMailboxId(mailboxId).block())
+                softly.assertThat(countTotalMessageMailboxByRawQuery(mailboxId))
                     .isEqualTo(0);
             });
         }
