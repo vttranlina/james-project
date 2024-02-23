@@ -1520,7 +1520,12 @@ trait EmailSubmissionSetMethodContract {
          |             "rcptTo": [{"email": "${ANDRE.asString}"}]
          |           }
          |         }
-         |    }
+         |    },
+         |       "onSuccessUpdateEmail": {
+         |         "#k1490": {
+         |           "keywords": {"$$sent":true}
+         |         }
+         |       }
          |  }, "c1"]]
          |}""".stripMargin
 
@@ -1528,7 +1533,7 @@ trait EmailSubmissionSetMethodContract {
       .header(ACCEPT.toString, ACCEPT_RFC8621_VERSION_HEADER)
       .body(requestBob)
     .when
-      .post
+      .post.prettyPeek()
     .`then`
       .statusCode(SC_OK)
       .contentType(JSON)
