@@ -30,5 +30,5 @@ public interface UploadUsageRepository {
 
     Publisher<QuotaSizeUsage> getSpaceUsage(Username username);
 
-    Publisher<Void> resetSpace(Username username, QuotaSizeUsage usage);
+    Publisher<Void> resetSpace(Username username, QuotaSizeUsage newUsage);
 }
