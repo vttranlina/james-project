@@ -63,9 +63,7 @@ public class PostgresUploadUsageRepository implements UploadUsageRepository {
 
     @Override
     public Mono<Void> resetSpace(Username username, QuotaSizeUsage newUsage) {
-        return getSpaceUsage(username)
-            .switchIfEmpty(Mono.just(QuotaSizeUsage.ZERO))
-            .filter(quotaSizeUsage -> quotaSizeUsage.asLong() != newUsage.asLong())
-            .flatMap(quotaSizeUsage -> decreaseSpace(username, QuotaSizeUsage.size(quotaSizeUsage.asLong() - newUsage.asLong())));
+        return quotaCurrentValueDAO.upsert(QuotaCurrentValue.Key.of(QuotaComponent.JMAP_UPLOADS, username.asString(), QuotaType.SIZE), newUsage.asLong())
+            .then();
     }
 }
