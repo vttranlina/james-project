@@ -171,6 +171,7 @@ public class UploadDAO {
         this.delete = session.prepare(deleteFrom(TABLE_NAME)
             .whereColumn(USER).isEqualTo(bindMarker(USER))
             .whereColumn(ID).isEqualTo(bindMarker(ID))
+            .ifExists()
             .build());
 
         this.all = session.prepare(selectFrom(TABLE_NAME)
@@ -202,8 +203,8 @@ public class UploadDAO {
             .map(rowToUploadRepresentation());
     }
 
-    public Mono<Void> delete(Username username, UploadId uploadId) {
-        return executor.executeVoid(delete.bind()
+    public Mono<Boolean> delete(Username username, UploadId uploadId) {
+        return executor.executeReturnApplied(delete.bind()
             .setString(USER, username.asString())
             .setUuid(ID, uploadId.getId()));
     }
