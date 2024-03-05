@@ -169,8 +169,11 @@ public class IdleProcessor extends AbstractMailboxProcessor<IdleRequest> impleme
 
         @Override
         public Publisher<Void> reactiveEvent(Event event) {
-            return unsolicitedResponses(session, responder, false)
-                .then(Mono.fromRunnable(responder::flush));
+            System.out.println("IdleProcessor.IdleMailboxListener.reactiveEvent");
+            return Mono.delay(Duration.ofMinutes(12))
+                .doOnNext(e -> System.out.println("IdleProcessor.IdleMailboxListener.reactiveEvent.doOnNext"))
+                .then(unsolicitedResponses(session, responder, false)
+                    .then(Mono.fromRunnable(responder::flush)));
         }
 
         @Override

@@ -24,6 +24,7 @@ import static io.vavr.API.Case;
 import static io.vavr.API.Match;
 import static io.vavr.Predicates.instanceOf;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
@@ -310,7 +311,7 @@ public class SelectedMailboxImpl implements SelectedMailbox, EventListener.React
     }
 
     
-    
+
     @Override
     public synchronized void resetExpungedUids() {
         expungedUids.clear();
