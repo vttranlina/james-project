@@ -34,7 +34,6 @@ import org.apache.james.mailbox.store.mail.model.impl.SimpleMailboxMessage;
 import org.apache.james.util.ReactorUtils;
 import org.jooq.Record;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 
 import reactor.core.publisher.Flux;
@@ -70,10 +69,8 @@ public class AttachmentLoader {
     }
 
     private Mono<List<MessageAttachmentMetadata>> getAttachments(Map<AttachmentId, MessageRepresentation.AttachmentRepresentation> mapAttachmentIdToAttachmentRepresentation) {
-        return attachmentMapper.getAttachmentsReactive(mapAttachmentIdToAttachmentRepresentation.values()
-                .stream()
-                .map(MessageRepresentation.AttachmentRepresentation::getAttachmentId)
-                .collect(ImmutableList.toImmutableList()))
+        return Mono.fromCallable(mapAttachmentIdToAttachmentRepresentation::keySet)
+            .flatMapMany(attachmentMapper::getAttachmentsReactive)
             .map(attachmentMetadata -> constructMessageAttachment(attachmentMetadata, mapAttachmentIdToAttachmentRepresentation.get(attachmentMetadata.getAttachmentId())))
             .collectList();
     }
