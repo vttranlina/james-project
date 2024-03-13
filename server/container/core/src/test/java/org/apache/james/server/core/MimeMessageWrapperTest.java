@@ -379,4 +379,13 @@ public class MimeMessageWrapperTest extends MimeMessageFromStreamTest {
             IOUtils.consume(wrapper.getMessageInputStream()));
         LifecycleUtil.dispose(wrapper);
     }
+
+    @Test
+    public void shouldKeepFranceWords() throws Exception {
+        MimeMessageWrapper wrapper = new MimeMessageWrapper(MimeMessageInputStreamSource.create(MailImpl.getId(),
+            ClassLoaderUtils.getSystemResourceAsSharedStream("calendar_reply_accepted-fr.eml")));
+
+        assertThat(wrapper.getSubject()).isEqualTo("ACCEPTÉ: {{EVENT_TITLE}} @ {{EVENT_START_DATE}} ({{ATTENDEE}})");
+        LifecycleUtil.dispose(wrapper);
+    }
 }
