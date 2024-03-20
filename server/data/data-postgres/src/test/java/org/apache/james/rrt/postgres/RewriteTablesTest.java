@@ -28,6 +28,6 @@ import org.junit.platform.suite.api.Suite;
 @Suite
 @IncludeEngines("cucumber")
 @SelectClasspathResource("cucumber")
-@ConfigurationParameter(key = GLUE_PROPERTY_NAME, value = "org.apache.james.rrt.postgres")
+@ConfigurationParameter(key = GLUE_PROPERTY_NAME, value = "org.apache.james.rrt.lib,org.apache.james.rrt.postgres")
 public class RewriteTablesTest {
 }
