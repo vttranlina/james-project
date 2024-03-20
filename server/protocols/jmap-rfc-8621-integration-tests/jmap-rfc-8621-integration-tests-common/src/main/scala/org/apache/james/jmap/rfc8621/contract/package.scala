@@ -19,10 +19,17 @@
 
 package org.apache.james.jmap.rfc8621
 
+import java.util.concurrent.TimeoutException
+
 import cats.implicits.toFunctorOps
+import reactor.core.publisher.Flux
+import reactor.core.scala.publisher.SMono
+import reactor.core.scheduler.Schedulers
 import sttp.client3.Identity
-import sttp.ws.WebSocketFrame
 import sttp.ws.WebSocketFrame.Text
+import sttp.ws.{WebSocket, WebSocketFrame}
+
+import scala.concurrent.duration.{Duration, MILLISECONDS}
 
 package object contract {
 
@@ -32,4 +39,17 @@ package object contract {
       case _ => throw new RuntimeException("Not a text frame")
     }
   }
+
+  def receiveWebSocketMessages(ws: WebSocket[Identity], timeout: Duration = scala.concurrent.duration.Duration(1000, MILLISECONDS)): List[Identity[String]] =
+    SMono.fromCallable(() => ws.receive().asPayload)
+      .publishOn(Schedulers.boundedElastic())
+      .repeat()
+      .timeout(timeout)
+      .onErrorResume {
+        case _: TimeoutException =>
+          Flux.empty[String]
+      }
+      .collectSeq()
+      .block().toList
+
 }
