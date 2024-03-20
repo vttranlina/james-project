@@ -62,6 +62,7 @@ import sttp.monad.MonadError
 import sttp.ws.WebSocketFrame
 
 import scala.collection.mutable.ListBuffer
+import scala.concurrent.duration.MILLISECONDS
 import scala.jdk.CollectionConverters._
 
 
@@ -8168,7 +8169,7 @@ trait MailboxSetMethodContract {
                  |      }
                  |    }, "c1"]]
                  |}""".stripMargin))
-            receiveWebSocketMessages(ws)
+            ws.receiveMessageInTimespan(scala.concurrent.duration.Duration(1000, MILLISECONDS))
         })
         .send(backend)
         .body

@@ -40,16 +40,18 @@ package object contract {
     }
   }
 
-  def receiveWebSocketMessages(ws: WebSocket[Identity], timeout: Duration = scala.concurrent.duration.Duration(1000, MILLISECONDS)): List[Identity[String]] =
-    SMono.fromCallable(() => ws.receive().asPayload)
-      .publishOn(Schedulers.boundedElastic())
-      .repeat()
-      .timeout(timeout)
-      .onErrorResume {
-        case _: TimeoutException =>
-          Flux.empty[String]
-      }
-      .collectSeq()
-      .block().toList
 
+  implicit class receiveMessageInTimespan(val ws: WebSocket[Identity]) {
+    def receiveMessageInTimespan(timeout: Duration = scala.concurrent.duration.Duration(1000, MILLISECONDS)): List[Identity[String]] =
+      SMono.fromCallable(() => ws.receive().asPayload)
+        .publishOn(Schedulers.boundedElastic())
+        .repeat()
+        .take(timeout)
+        .onErrorResume {
+          case _: TimeoutException =>
+            Flux.empty[String]
+        }
+        .collectSeq()
+        .block().toList
+  }
 }
