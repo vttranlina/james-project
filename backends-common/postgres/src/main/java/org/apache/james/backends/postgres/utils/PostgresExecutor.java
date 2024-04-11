@@ -137,8 +137,9 @@ public class PostgresExecutor {
                 .flatMapMany(queryFunction)
                 .timeout(postgresConfiguration.getJooqReactiveTimeout())
                 .doOnError(TimeoutException.class, e -> LOGGER.error(JOOQ_TIMEOUT_ERROR_LOG, e))
-                .collectList()
-                .flatMapIterable(list -> list) // The convert Flux -> Mono<List> -> Flux to avoid a hanging issue. See: https://github.com/jOOQ/jOOQ/issues/16055
+                .window(1)
+                .flatMap(flux -> flux)
+                // The convert Flux -> Mono<List> -> Flux to avoid a hanging issue. See: https://github.com/jOOQ/jOOQ/issues/16055
                 .retryWhen(Retry.backoff(MAX_RETRY_ATTEMPTS, MIN_BACKOFF)
                     .filter(preparedStatementConflictException()))));
     }
@@ -147,7 +148,6 @@ public class PostgresExecutor {
         return Mono.from(metricFactory.decoratePublisherWithTimerMetric("postgres-execution",
             dslContext()
                 .flatMap(queryFunction.andThen(Mono::from))
-                .timeout(postgresConfiguration.getJooqReactiveTimeout())
                 .doOnError(TimeoutException.class, e -> LOGGER.error(JOOQ_TIMEOUT_ERROR_LOG, e))
                 .retryWhen(Retry.backoff(MAX_RETRY_ATTEMPTS, MIN_BACKOFF)
                     .filter(preparedStatementConflictException()))));

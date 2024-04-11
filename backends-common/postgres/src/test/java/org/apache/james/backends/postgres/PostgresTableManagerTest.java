@@ -23,15 +23,24 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
 import org.apache.commons.lang3.tuple.Pair;
+import org.jooq.DSLContext;
+import org.jooq.Field;
+import org.jooq.Record;
+import org.jooq.SQLDialect;
+import org.jooq.Table;
+import org.jooq.conf.Settings;
+import org.jooq.conf.StatementType;
 import org.jooq.impl.DSL;
 import org.jooq.impl.SQLDataType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
+import io.r2dbc.spi.Connection;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -42,6 +51,95 @@ class PostgresTableManagerTest {
 
     Function<PostgresModule, PostgresTableManager> tableManagerFactory =
         module -> new PostgresTableManager(postgresExtension.getPostgresExecutor(), module, true);
+
+    @Test
+    void selectABigRecordsThenExecuteOtherQueriesShouldNotHang() {
+        // Setup DSLContext
+        Settings jooqSettings = new Settings()
+            .withRenderFormatted(true)
+            .withStatementType(StatementType.PREPARED_STATEMENT);
+        Connection r2dbcConnection = postgresExtension.getConnection().block();
+        DSLContext dslContext = DSL.using(r2dbcConnection, SQLDialect.POSTGRES, jooqSettings);
+
+        // Create `users` table
+        Table<Record> USER_TABLE = DSL.table("users");
+        Field<String> USERNAME = DSL.field("username", SQLDataType.VARCHAR(255).notNull());
+        Field<String> PASSWORD = DSL.field("password", SQLDataType.VARCHAR);
+
+        Mono.from(dslContext.createTableIfNotExists(USER_TABLE)
+                .column(USERNAME)
+                .column(PASSWORD)
+                .constraints(DSL.primaryKey(USERNAME)))
+            .block();
+
+        // Insert 1000 users
+        Flux.range(1, 1000)
+            .flatMap(counter -> Mono.from(dslContext.insertInto(USER_TABLE)
+                .set(USERNAME, counter.toString())
+                .set(PASSWORD, "password")))
+            .collectList()
+            .block();
+
+        // Create `mailboxes` table
+        Table<Record> MAILBOX_TABLE = DSL.table("mailboxes");
+        Field<String> MAILBOX_ID = DSL.field("mailbox_id", SQLDataType.VARCHAR(255).notNull());
+
+        Mono.from(dslContext.createTableIfNotExists(MAILBOX_TABLE)
+                .column(MAILBOX_ID)
+                .constraints(DSL.primaryKey(MAILBOX_ID)))
+            .block();
+
+        // insert 1 dummy record into mailboxes table
+        Mono.from(dslContext.insertInto(MAILBOX_TABLE)
+                .set(MAILBOX_ID, "whatever"))
+            .block();
+
+        System.out.println("finished provisioning data");
+
+        // list all the users then query in the same `users` table as well -> this would hang forever
+
+        AtomicInteger userCounter = new AtomicInteger();
+        AtomicInteger passwordCounter = new AtomicInteger();
+        AtomicInteger doOnNext = new AtomicInteger();
+
+        var t = Flux.from(r2dbcConnection.createStatement("SELECT * FROM users ")
+                .execute())
+            .flatMap(result -> result.map((row, rowMetadata) -> {
+                System.out.println("userCounter: " + userCounter.incrementAndGet());
+                return row.get("username", String.class);
+            }))
+            .flatMap(username -> Mono.from(r2dbcConnection.createStatement("SELECT * FROM users WHERE username = $1 AND password = $2")
+                .bind("$1", username)
+                .bind("$2", "password")
+                .execute()))
+            .flatMap(result -> result.map((row, rowMetadata) -> {
+                System.out.println("passwordCounter: " + passwordCounter.incrementAndGet());
+                return row.get("username", String.class);
+            }))
+            .doOnNext(any -> {
+                System.out.println("doOnNext: " + doOnNext.incrementAndGet());
+            })
+            .collectList()
+            .block();
+
+        assertThat(Flux.from(dslContext.selectFrom(USER_TABLE))
+            .map(record -> record.get(USERNAME))
+            .flatMap(username -> Mono.from(dslContext.selectFrom(USER_TABLE)
+                    .where(USERNAME.eq(username), PASSWORD.eq("password"))),
+                1)
+            .collectList()
+            .block())
+            .hasSize(1000);
+
+        // list all the users then query another `mailboxes` table -> this would hang forever
+        assertThat(Flux.from(dslContext.selectFrom(USER_TABLE))
+            .map(record -> record.get(USERNAME))
+            .concatMap(any -> Mono.from(dslContext.selectOne()
+                .from(MAILBOX_TABLE)))
+            .collectList()
+            .block())
+            .hasSize(1000);
+    }
 
     @Test
     void initializeTableShouldSuccessWhenModuleHasSingleTable() {
