@@ -35,6 +35,6 @@ public class SinglePostgresConnectionFactory implements JamesPostgresConnectionF
 
     @Override
     public Mono<Connection> getConnection(Optional<Domain> domain) {
-        return Mono.just(connection);
+        return Mono.fromCallable(() -> connection);
     }
 }

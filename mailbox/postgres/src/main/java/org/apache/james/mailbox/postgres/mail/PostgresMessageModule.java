@@ -150,8 +150,7 @@ public interface PostgresMessageModule {
                 .column(IS_SEEN)
                 .column(USER_FLAGS)
                 .column(SAVE_DATE)
-                .constraints(DSL.primaryKey(MAILBOX_ID, MESSAGE_UID),
-                    foreignKey(MESSAGE_ID).references(MessageTable.TABLE_NAME, MessageTable.MESSAGE_ID))
+                .constraints(DSL.primaryKey(MAILBOX_ID, MESSAGE_UID))
                 .comment("Holds mailbox and flags for each message")))
             .supportsRowLevelSecurity()
             .addAdditionalAlterQueries(CREATE_ARRAY_REMOVE_JAMES_FUNCTION)

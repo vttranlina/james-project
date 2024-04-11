@@ -52,6 +52,8 @@ import static org.apache.james.mailbox.postgres.mail.dao.PostgresMailboxMessageD
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
@@ -236,10 +238,27 @@ public class PostgresMailboxMessageDAO {
     }
 
     public Flux<PostgresMessageId> deleteByMailboxId(PostgresMailboxId mailboxId) {
-        return postgresExecutor.executeDeleteAndReturnList(dslContext -> dslContext.deleteFrom(TABLE_NAME)
-                .where(MAILBOX_ID.eq(mailboxId.asUuid()))
-                .returning(MESSAGE_ID))
-            .map(record -> PostgresMessageId.Factory.of(record.get(MESSAGE_ID)));
+        return deleteByMailboxIdAndReturning(mailboxId)
+            .map(PostgresMessageId.Factory::of);
+    }
+
+    public Flux<UUID> deleteByMailboxIdAndReturning(PostgresMailboxId mailboxId) {
+        AtomicInteger counter = new AtomicInteger(0);
+        AtomicInteger doOnNextCounter = new AtomicInteger(0);
+
+        return postgresExecutor.connection()
+            .flatMapMany(con -> Flux.from(con.createStatement("DELETE FROM message_mailbox WHERE mailbox_id = $1 RETURNING message_id")
+                    .bind(0, mailboxId.asUuid())
+                    .execute())
+                .flatMap(result -> result.map((row, rowMetadata) -> {
+                    String msgIdWasDeleted = row.get(0, String.class);
+                    System.out.println("msg was deleted(" + counter.incrementAndGet() + "): " + msgIdWasDeleted);
+                    return msgIdWasDeleted;
+                }), 5,15))
+            .doOnNext(e -> {
+                System.out.println("____doOnNext("+doOnNextCounter.incrementAndGet()+"): " + e);
+            })
+            .map(UUID::fromString);
     }
 
     public Mono<Void> deleteByMessageIdAndMailboxIds(PostgresMessageId messageId, Collection<PostgresMailboxId> mailboxIds) {
