@@ -1,21 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
         <appender name="FILE" class="ch.qos.logback.core.FileAppender">
-                <file>target/test-run.log</file>
+                <file>target/test-run1.log</file>
                 <append>false</append>
                 <!-- set immediateFlush to false for much higher logging throughput -->
                 <immediateFlush>false</immediateFlush>
                 <!-- encoders are assigned the type
                      ch.qos.logback.classic.encoder.PatternLayoutEncoder by default -->
                 <encoder>
-                        <pattern>%d{HH:mm:ss.SSS} [%-5level] %logger{35} - %msg%n%rEx</pattern>
+                        <pattern>%d{HH:mm:ss.SSS} [%.7thread] [%-5level] %logger{35} - %msg%n%rEx</pattern>
                 </encoder>
         </appender>
 
 
         <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
                 <encoder>
-                        <pattern>%d{HH:mm:ss.SSS} [%-5level] %logger{15} - %msg%n%rEx</pattern>
+                        <pattern>%d{HH:mm:ss.SSS} [%.7thread] [%-5level] %logger{15} - %msg%n%rEx</pattern>
                 </encoder>
                 <immediateFlush>false</immediateFlush>
                 <!-- Disable below block for debug logs mode-->
@@ -24,7 +24,7 @@
                 </filter>
         </appender>
 
-        <root level="WARN">
+        <root level="DEBUG">
                 <appender-ref ref="CONSOLE" />
                 <appender-ref ref="FILE" />
         </root>

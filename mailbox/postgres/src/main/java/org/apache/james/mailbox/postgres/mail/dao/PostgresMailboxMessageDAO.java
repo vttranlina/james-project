@@ -92,6 +92,8 @@ import org.jooq.UpdateConditionStep;
 import org.jooq.UpdateSetStep;
 import org.jooq.impl.DSL;
 import org.jooq.util.postgres.PostgresDSL;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
@@ -103,6 +105,7 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 public class PostgresMailboxMessageDAO {
+    private static final Logger LOGGER = LoggerFactory.getLogger(PostgresMailboxMessageDAO.class);
 
     public static class Factory {
         private final PostgresExecutor.Factory executorFactory;
@@ -256,48 +259,22 @@ public class PostgresMailboxMessageDAO {
         AtomicInteger counter = new AtomicInteger(0);
         AtomicInteger doOnNextCounter = new AtomicInteger(0);
 
-        var t = postgresExecutor.connection()
-            .publishOn(Schedulers.newSingle("deleteByMailboxIdAndReturning111"))
+        return postgresExecutor.connection()
             .flatMapMany(con -> Flux.from(con.createStatement("DELETE FROM message_mailbox WHERE mailbox_id = $1 RETURNING message_id")
-                .bind(0, mailboxId.asUuid())
-                .execute()))
-
-            .concatMap(result -> result.map((row, rowMetadata) -> {
-                System.out.println("____doOnNext(" + doOnNextCounter.incrementAndGet() + "): ");
-                return row;
-            }))
-            .handle((row, sink) -> {
-                System.out.println("msg was deleted(" + counter.incrementAndGet() + "): ");
-                String msgIdWasDeleted = row.get(0, String.class);
-                sink.next((String) msgIdWasDeleted);
+                    .bind(0, mailboxId.asUuid())
+                    .execute())
+                .flatMap(result -> result.map((row, rowMetadata) -> {
+                    String msgIdWasDeleted = row.get(0, String.class);
+                    System.out.println(Thread.currentThread().getName() +"- msg was deleted(" + counter.incrementAndGet() + "): " + msgIdWasDeleted);
+                    LOGGER.info("- msg was deleted(" + counter.incrementAndGet() + "): " + msgIdWasDeleted);
+                    return msgIdWasDeleted;
+                }), 5,15))
+            .doOnNext(e -> {
+                System.out.println(Thread.currentThread().getName() +"____doOnNext("+doOnNextCounter.incrementAndGet()+"): " + e);
+                LOGGER.info("____doOnNext("+doOnNextCounter.incrementAndGet()+"): " + e);
             })
-            .window(1).flatMap(flux -> flux)
-            .map(row -> {
-                return (String) row;
-            })
-            .map(UUID::fromString)
-            .subscribeOn(Schedulers.newSingle("deleteByMailboxIdAndReturning"));
-
-//        return postgresExecutor.connection()
-//            .flatMapMany(con -> Flux.from(con.createStatement("DELETE FROM message_mailbox WHERE mailbox_id = $1 RETURNING message_id")
-//                    .bind(0, mailboxId.asUuid())
-//                    .execute())
-//                .flatMap(result -> result.map((row, rowMetadata) -> {
-//                    String msgIdWasDeleted = row.get(0, String.class);
-//                    System.out.println("msg was deleted(" + counter.incrementAndGet() + "): " + msgIdWasDeleted);
-//                    return msgIdWasDeleted;
-//                }),2,3)
-//                .window(1).flatMap(flux->flux)
-//            )
-//            .doOnNext(e -> {
-//                System.out.println("____doOnNext("+doOnNextCounter.incrementAndGet()+"): " + e);
-//            })
-//            .doOnDiscard(Object.class, o -> {
-//                 System.out.println("Discarded: " + o);
-//            })
-//            .map(UUID::fromString);
-
-        return t;
+            .log()
+            .map(UUID::fromString);
     }
 
     public Mono<Void> deleteByMessageIdAndMailboxIds(PostgresMessageId messageId, Collection<PostgresMailboxId> mailboxIds) {
