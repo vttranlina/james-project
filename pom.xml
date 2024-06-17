@@ -2975,7 +2975,7 @@
                 <plugin>
                     <groupId>com.google.cloud.tools</groupId>
                     <artifactId>jib-maven-plugin</artifactId>
-                    <version>3.3.2</version>
+                    <version>3.4.3</version>
                 </plugin>
                 <plugin>
                     <groupId>io.github.evis</groupId>
@@ -3033,7 +3033,7 @@
                 <plugin>
                     <groupId>net.alchim31.maven</groupId>
                     <artifactId>scala-maven-plugin</artifactId>
-                    <version>4.6.1</version>
+                    <version>4.9.1</version>
                     <configuration>
                         <recompileMode>all</recompileMode>
                         <source>${target.jdk}</source>
