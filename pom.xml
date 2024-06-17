@@ -2319,7 +2319,7 @@
             <dependency>
                 <groupId>eu.timepit</groupId>
                 <artifactId>refined_${scala.base}</artifactId>
-                <version>0.11.0</version>
+                <version>0.11.2</version>
             </dependency>
             <dependency>
                 <groupId>io.cucumber</groupId>
@@ -3056,7 +3056,7 @@
                             <compilerPlugin>
                                 <groupId>org.scalameta</groupId>
                                 <artifactId>semanticdb-scalac_${scala.version}</artifactId>
-                                <version>4.8.4</version>
+                                <version>4.9.6</version>
                             </compilerPlugin>
                         </compilerPlugins>
                     </configuration>
@@ -3318,7 +3318,7 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-report-plugin</artifactId>
-                    <version>3.1.2</version>
+                    <version>3.3.0</version>
                     <configuration>
                         <aggregate>true</aggregate>
                     </configuration>
