@@ -656,7 +656,6 @@
 
         <scala.base>2.13</scala.base>
         <scala.version>${scala.base}.11</scala.version>
-        <scalatestplus-play.version>5.0.0</scalatestplus-play.version>
         <doclint>none</doclint>
         <mockito.version>5.10.0</mockito.version>
         <jacoco-maven-plugin.version>0.8.12</jacoco-maven-plugin.version>
