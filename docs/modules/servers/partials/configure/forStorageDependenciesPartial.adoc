@@ -1,0 +1,11 @@
+== For storage dependencies
+
+Except specific documented cases, these files are required, at least to establish a connection with the storage components.
+
+** xref:partial$configure/blobstore.adoc[*blobstore.properties*] allows to configure the BlobStore link:{example-url-prefix}/sample-configuration/blob.properties[example]
+
+** xref:partial$configure/opensearch.adoc[*opensearch.properties*] allows to configure OpenSearch driver link:{example-url-prefix}/sample-configuration/opensearch.properties[example]
+** xref:partial$configure/rabbitmq.adoc[*rabbitmq.properties*] allows configuration for the RabbitMQ driver link:{example-url-prefix}/sample-configuration/rabbitmq.properties[example]
+** xref:partial$configure/redis.adoc[*redis.properties*] allows configuration for the Redis driver link:https://github.com/apache/james-project/blob/fabfdf4874da3aebb04e6fe4a7277322a395536a/server/mailet/rate-limiter-redis/redis.properties[example], that is used by optional
+distributed rate limiting component.
+** xref:partial$configure/tika.adoc[*tika.properties*] allows configuring Tika as a backend for text extraction link:{example-url-prefix}/sample-configuration/tika.properties[example]

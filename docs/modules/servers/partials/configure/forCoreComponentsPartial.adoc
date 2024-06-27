@@ -1,0 +1,16 @@
+
+== For core components
+
+By omitting these files, sane default values are used.
+
+** xref:partial$configure/batchsizes.adoc[*batchsizes.properties*] allows to configure mailbox read batch sizes link:{example-url-prefix}/sample-configuration/batchsizes.properties[example]
+** xref:partial$configure/dns.adoc[*dnsservice.xml*] allows to configure DNS resolution link:{example-url-prefix}/sample-configuration/dnsservice.xml[example]
+** xref:partial$configure/domainlist.adoc[*domainlist.xml*] allows to configure Domain storage link:{example-url-prefix}/sample-configuration/domainlist.xml[example]
+** xref:partial$configure/healthcheck.adoc[*healthcheck.properties*] allows to configure periodical healthchecks link:{example-url-prefix}/sample-configuration/healthcheck.properties[example]
+** xref:partial$configure/mailetcontainer.adoc[*mailetcontainer.xml*] allows configuring mail processing link:{example-url-prefix}/sample-configuration/mailetcontainer.xml[example]
+*** xref:partial$configure/mailets.adoc[This page] list matchers that can be used out of the box with the Distributed Server.
+*** xref:partial$configure/matchers.adoc[This page] list matchers that can be used out of the box with the Distributed Server.
+** xref:partial$configure/mailrepositorystore.adoc[*mailrepositorystore.xml*] enables registration of allowed MailRepository protcols and link them to MailRepository implementations link:{example-url-prefix}/sample-configuration/mailrepositorystore.xml[example]
+** xref:partial$configure/recipientrewritetable.adoc[*recipientrewritetable.xml*] enables advanced configuration for the Recipient Rewrite Table component link:{example-url-prefix}/sample-configuration/recipientrewritetable.xml[example]
+*** xref:partial$configure/matchers.adoc[This page] allows choosing the indexing technology.
+** xref:partial$configure/usersrepository.adoc[*usersrepository.xml*] allows configuration of user storage link:{example-url-prefix}/sample-configuration/usersrepository.xml[example]

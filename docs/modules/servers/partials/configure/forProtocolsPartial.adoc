@@ -1,0 +1,15 @@
+== For protocols
+
+By omitting these files, the underlying protocols will be disabled.
+
+** xref:partial$configure/imap.adoc[*imapserver.xml*] allows configuration for the IMAP protocol link:{example-url-prefix}/sample-configuration/imapserver.xml[example]
+** xref:partial$configure/jmap.adoc[*jmap.properties*] allows to configure the JMAP protocol link:{example-url-prefix}/sample-configuration/jmap.properties[example]
+** xref:partial$configure/jmx.adoc[*jmx.properties*] allows configuration of JMX being used by the Command Line Interface link:{example-url-prefix}/sample-configuration/jmx.properties[example]
+** xref:partial$configure/smtp.adoc#_lmtp_configuration[*lmtpserver.xml*] allows configuring the LMTP protocol link:{example-url-prefix}/sample-configuration/lmtpserver.xml[example]
+** *managesieveserver.xml* allows configuration for ManagedSieve (unsupported) link:{example-url-prefix}/sample-configuration/managesieveserver.xml[example]
+** xref:partial$configure/pop3.adoc[*pop3server.xml*] allows configuration for the POP3 protocol (experimental) link:{example-url-prefix}/sample-configuration/pop3server.xml[example]
+** xref:partial$configure/smtp.adoc[*smtpserver.xml*] allows configuration for the SMTP protocol link:{example-url-prefix}/sample-configuration/smtpserver.xml[example]
+*** xref:partial$configure/smtp-hooks.adoc[This page] list SMTP hooks that can be used out of the box with the Distributed Server.
+** xref:partial$configure/webadmin.adoc[*webadmin.properties*] enables configuration for the WebAdmin protocol link:{example-url-prefix}/sample-configuration/webadmin.properties[example]
+** xref:partial$configure/ssl.adoc[This page] details SSL & TLS configuration.
+** xref:partial$configure/sieve.adoc[This page] details Sieve setup and how to enable ManageSieve.

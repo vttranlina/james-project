@@ -26,7 +26,7 @@
 ***** xref:distributed/run/k8s-secrets.adoc[secrets.yaml]
 *** xref:distributed/configure/index.adoc[]
 **** Protocols
-***** xref:distributed/configure/imap.adoc[imapserver.xml]
+***** xref:servers:partials/configure/imap.adoc[imapserver.xml]
 ***** xref:distributed/configure/jmap.adoc[jmap.properties]
 ***** xref:distributed/configure/jmx.adoc[jmx.properties]
 ***** xref:distributed/configure/smtp.adoc[smtpserver.xml & lmtpserver.xml]
