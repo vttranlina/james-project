@@ -79,6 +79,7 @@ import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.S3Configuration;
 import software.amazon.awssdk.services.s3.model.Bucket;
 import software.amazon.awssdk.services.s3.model.BucketAlreadyOwnedByYouException;
+import software.amazon.awssdk.services.s3.model.CreateBucketRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.ListBucketsResponse;
@@ -388,7 +389,12 @@ public class S3BlobStoreDAO implements BlobStoreDAO, Startable, Closeable {
             .maxAttempts(MAX_RETRIES)
             .doBeforeRetryAsync(retrySignal -> {
                 if (retrySignal.failure() instanceof NoSuchBucketException) {
-                    return Mono.fromFuture(client.createBucket(builder -> builder.bucket(bucketName.asString())))
+                    CreateBucketRequest createBucketRequest = CreateBucketRequest.builder()
+                        .bucket(bucketName.asString())
+                        .objectLockEnabledForBucket(true)
+                        .build();
+
+                    return Mono.fromFuture(client.createBucket(createBucketRequest))
                         .onErrorResume(BucketAlreadyOwnedByYouException.class, e -> Mono.empty())
                         .then();
                 } else {
