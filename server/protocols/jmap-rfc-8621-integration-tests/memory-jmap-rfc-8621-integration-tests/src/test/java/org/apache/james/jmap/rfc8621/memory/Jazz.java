@@ -16,6 +16,45 @@
  * specific language governing permissions and limitations      *
  * under the License.                                           *
  ****************************************************************/
- 
-package org.apache.james.jmap.rfc8621.memory;public class Jazz {
+
+package org.apache.james.jmap.rfc8621.memory;
+
+import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
+
+import javax.mail.internet.InternetAddress;
+
+import org.apache.james.core.MailAddress;
+import org.junit.runner.RunWith;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import edu.berkeley.cs.jqf.fuzz.Fuzz;
+import edu.berkeley.cs.jqf.fuzz.JQF;
+
+@RunWith(JQF.class)
+public class Jazz {
+    private static final Logger logger = LoggerFactory.getLogger(Jazz.class);
+
+    @Fuzz
+    public void test(String str) {
+        if (str == null) {
+            return;
+        }
+
+        MailAddress m;
+        try {
+            m = new MailAddress(str);
+        } catch (jakarta.mail.internet.AddressException e) {
+            return;
+        }
+
+        try {
+            new InternetAddress(str);
+        } catch (Exception e) {
+            if (e.getMessage().contains("contains illegal character")) {
+                logger.error("_________Invalid InternetAddress with illegal character: {}", str);
+                assertThat(e.getMessage()).isEqualTo("FAILED");
+            }
+        }
+    }
 }
