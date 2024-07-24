@@ -1,0 +1,48 @@
+version: '3'
+
+services:
+  redis-master:
+    image: redis:7.2.5
+    container_name: redis-master
+    restart: always
+    ports:
+      - "6379:6379"
+    command: sh /usr/local/etc/redis/docker-entrypoint.sh
+    env_file:
+      - ../config-template/.env
+    volumes:
+      - ./redis.conf.template:/usr/local/etc/redis/redis.conf
+      - ./docker-entrypoint-master.sh:/usr/local/etc/redis/docker-entrypoint.sh
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping", "|", "grep", "PONG"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      redis-network:
+        ipv4_address: 172.28.1.11
+
+  sentinel-1:
+    image: redis:7.2.5
+    container_name: sentinel-1
+    restart: always
+    ports:
+      - "26379:26379"
+    command: sh /usr/local/etc/redis/docker-entrypoint.sh
+    volumes:
+      - ../config-template/sentinel/sentinel.conf.template:/usr/local/etc/redis/sentinel.conf.template
+      - ../config-template/sentinel/docker-entrypoint-sentinel.sh:/usr/local/etc/redis/docker-entrypoint.sh
+    env_file:
+      - ../config-template/.env
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "26379", "ping", "|", "grep", "PONG"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      redis-network:
+        ipv4_address: 172.28.1.12
+
+networks:
+  redis-network:
+    external: true

@@ -1,0 +1,7 @@
+port 26379
+loglevel debug
+
+sentinel monitor mymaster ${REDIS_MONITOR_HOST} ${REDIS_MONITOR_PORT} 2
+sentinel down-after-milliseconds mymaster 5000
+sentinel failover-timeout mymaster 10000
+sentinel parallel-syncs mymaster 1
