@@ -60,7 +60,7 @@ public class S3MinioTest implements BlobStoreDAOContract {
 
     private static S3ClientFactory s3ClientFactory;
 
-    @Container
+//    @Container
     private static final GenericContainer<?> minioContainer = new GenericContainer<>(MINIO_IMAGE_FULL)
         .withExposedPorts(MINIO_PORT)
         .withEnv("MINIO_ROOT_USER", ACCESS_KEY_ID)
@@ -72,9 +72,10 @@ public class S3MinioTest implements BlobStoreDAOContract {
     @BeforeAll
     static void setUp() {
         AwsS3AuthConfiguration authConfiguration = AwsS3AuthConfiguration.builder()
-            .endpoint(URI.create(String.format("http://%s:%s/", minioContainer.getHost(), minioContainer.getMappedPort(MINIO_PORT))))
-            .accessKeyId(ACCESS_KEY_ID)
-            .secretKey(SECRET_ACCESS_KEY)
+            .endpoint(URI.create("https://localhost:9000/"))
+            .accessKeyId("minio")
+            .secretKey("minio123")
+            .trustAll(true)
             .build();
 
         S3BlobStoreConfiguration s3Configuration = S3BlobStoreConfiguration.builder()
@@ -82,8 +83,8 @@ public class S3MinioTest implements BlobStoreDAOContract {
             .region(DockerAwsS3Container.REGION)
             .uploadRetrySpec(Optional.of(Retry.backoff(3, java.time.Duration.ofSeconds(1))
                 .filter(UPLOAD_RETRY_EXCEPTION_PREDICATE)))
-            .build();
 
+            .build();
         s3ClientFactory = new S3ClientFactory(s3Configuration, new RecordingMetricFactory(), new NoopGaugeRegistry());
         testee = new S3BlobStoreDAO(s3ClientFactory, s3Configuration, new TestBlobId.Factory());
     }
@@ -123,6 +124,6 @@ public class S3MinioTest implements BlobStoreDAOContract {
         String derivedKey = KeyDerivationUtil.deriveKey("masterKey1", "salt1");
 
         Mono.from(testee.save(TEST_BUCKET_NAME, TEST_BLOB_ID, SHORT_BYTEARRAY, derivedKey)).block();
-        assertThat(Mono.from(testee.readBytes(TEST_BUCKET_NAME, TEST_BLOB_ID)).block()).isEqualTo(SHORT_BYTEARRAY);
+        assertThat(Mono.from(testee.readBytes(TEST_BUCKET_NAME, TEST_BLOB_ID, derivedKey)).block()).isEqualTo(SHORT_BYTEARRAY);
     }
 }
