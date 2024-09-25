@@ -1,6 +1,7 @@
 port 26379
 loglevel debug
 
+requirepass sentinelPass
 sentinel monitor mymaster redis-master 6379 2
 sentinel auth-pass mymaster secret1
 sentinel down-after-milliseconds mymaster 5000

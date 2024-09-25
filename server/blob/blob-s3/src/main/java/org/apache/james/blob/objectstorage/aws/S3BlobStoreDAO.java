@@ -226,6 +226,22 @@ public class S3BlobStoreDAO implements BlobStoreDAO {
             .then();
     }
 
+    public Mono<Void> save(BucketName bucketName, BlobId blobId, byte[] data, String customerKey) {
+        BucketName resolvedBucketName = bucketNameResolver.resolve(bucketName);
+
+        return Mono.fromFuture(() ->
+                client.putObject(
+                    builder -> builder.bucket(resolvedBucketName.asString())
+                        .sseCustomerAlgorithm("AES256")
+                        .sseCustomerKey(customerKey)
+                        .key(blobId.asString())
+                        .contentLength((long) data.length),
+                    AsyncRequestBody.fromBytes(data)))
+            .retryWhen(createBucketOnRetry(resolvedBucketName))
+            .publishOn(Schedulers.parallel())
+            .then();
+    }
+
     @Override
     public Mono<Void> save(BucketName bucketName, BlobId blobId, InputStream inputStream) {
         Preconditions.checkNotNull(inputStream);

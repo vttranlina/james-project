@@ -116,4 +116,13 @@ public class S3MinioTest implements BlobStoreDAOContract {
         Mono.from(testee.save(TEST_BUCKET_NAME, TEST_BLOB_ID, SHORT_BYTEARRAY)).block();
         assertThat(Mono.from(testee.readBytes(TEST_BUCKET_NAME, TEST_BLOB_ID)).block()).isEqualTo(SHORT_BYTEARRAY);
     }
+
+    @Test
+    void saveWithSSEC() throws Exception {
+        String objectKey = "ObjectKey1";
+        String derivedKey = KeyDerivationUtil.deriveKey("masterKey1", "salt1");
+
+        Mono.from(testee.save(TEST_BUCKET_NAME, TEST_BLOB_ID, SHORT_BYTEARRAY, derivedKey)).block();
+        assertThat(Mono.from(testee.readBytes(TEST_BUCKET_NAME, TEST_BLOB_ID)).block()).isEqualTo(SHORT_BYTEARRAY);
+    }
 }
