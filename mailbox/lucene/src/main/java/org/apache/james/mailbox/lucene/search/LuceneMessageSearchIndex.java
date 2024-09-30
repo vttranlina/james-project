@@ -33,7 +33,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
-import java.util.TimeZone;
 import java.util.stream.Stream;
 
 import jakarta.annotation.PreDestroy;
@@ -54,7 +53,6 @@ import org.apache.james.mailbox.model.MessageAttachmentMetadata;
 import org.apache.james.mailbox.model.MessageId;
 import org.apache.james.mailbox.model.MessageRange;
 import org.apache.james.mailbox.model.SearchQuery;
-import org.apache.james.mailbox.model.SearchQuery.AllCriterion;
 import org.apache.james.mailbox.model.SearchQuery.AttachmentCriterion;
 import org.apache.james.mailbox.model.SearchQuery.ContainsOperator;
 import org.apache.james.mailbox.model.SearchQuery.Criterion;
@@ -472,7 +470,7 @@ public class LuceneMessageSearchIndex extends ListeningMessageSearchIndex {
      * If set to true this implementation will use {@link WildcardQuery} to match suffix and prefix. This is what RFC3501 expects but is often not what the user does.
      * It also slow things a lot if you have complex queries which use many "TEXT" arguments. If you want the implementation to behave strict like RFC3501 says, you should
      * set this to true.
-     *
+     * <p>
      * The default is false for performance reasons
      */
     public void setEnableSuffixMatch(boolean suffixMatch) {
@@ -498,6 +496,7 @@ public class LuceneMessageSearchIndex extends ListeningMessageSearchIndex {
 
         return Flux.fromIterable(searchMultimap(mailboxIds, searchQuery)
             .stream()
+            .filter(searchResult -> searchResult.getMessageId().isPresent())
             .map(searchResult -> searchResult.getMessageId().get())
             .filter(SearchUtil.distinct())
             .limit(Long.valueOf(limit).intValue())
@@ -528,17 +527,14 @@ public class LuceneMessageSearchIndex extends ListeningMessageSearchIndex {
                 Document doc = searcher.storedFields().document(sDoc.doc);
                 MessageUid uid = MessageUid.of(doc.getField(UID_FIELD).numericValue().longValue());
                 MailboxId mailboxId = mailboxIdFactory.fromString(doc.get(MAILBOX_ID_FIELD));
-                Optional<MessageId> messageId = toMessageId(Optional.ofNullable(doc.get(MESSAGE_ID_FIELD)));
+                Optional<MessageId> messageId = Optional.ofNullable(doc.get(MESSAGE_ID_FIELD))
+                    .map(messageIdFactory::fromString);
                 results.add(new SearchResult(messageId, mailboxId, uid));
             }
         } catch (IOException e) {
             throw new MailboxException("Unable to search the mailbox", e);
         }
         return results.build();
-    }
-
-    private Optional<MessageId> toMessageId(Optional<String> messageIdField) {
-        return messageIdField.map(messageIdFactory::fromString);
     }
 
     private Query buildQueryFromMailboxes(Collection<MailboxId> mailboxIds) {
@@ -552,7 +548,7 @@ public class LuceneMessageSearchIndex extends ListeningMessageSearchIndex {
 
     /**
      * Create a new {@link Document} for the given {@link MailboxMessage}. This Document does not contain any flags data. The {@link Flags} are stored in a seperate Document.
-     *
+     * <p>
      * See {@link #createFlagsDocument(MailboxMessage)}
      */
     private Document createMessageDocument(final MailboxSession session, final MailboxMessage membership) throws IOException, MimeException {
@@ -574,8 +570,8 @@ public class LuceneMessageSearchIndex extends ListeningMessageSearchIndex {
             doc.add(new StringField(THREAD_ID_FIELD, serializedThreadId, Store.YES));
         }
 
-        // create an unqiue key for the document which can be used later on updates to find the document
-        doc.add(new StringField(ID_FIELD, membership.getMailboxId().serialize().toUpperCase(Locale.US) + "-" + Long.toString(membership.getUid().asLong()), Store.YES));
+        // create a unique key for the document which can be used later on updates to find the document
+        doc.add(new StringField(ID_FIELD, membership.getMailboxId().serialize().toUpperCase(Locale.US) + "-" + membership.getUid().asLong(), Store.YES));
 
         doc.add(new StringField(INTERNAL_DATE_FIELD_YEAR_RESOLUTION, DateTools.dateToString(membership.getInternalDate(), DateTools.Resolution.YEAR), Store.NO));
         doc.add(new StringField(INTERNAL_DATE_FIELD_MONTH_RESOLUTION, DateTools.dateToString(membership.getInternalDate(), DateTools.Resolution.MONTH), Store.NO));
@@ -633,7 +629,7 @@ public class LuceneMessageSearchIndex extends ListeningMessageSearchIndex {
                     }
 
 
-                    // Check if we can index the the address in the right manner
+                    // Check if we can index the address in the right manner
                     if (field != null) {
                         // not sure if we really should reparse it. It maybe be better to check just for the right type.
                         // But this impl was easier in the first place
@@ -756,7 +752,6 @@ public class LuceneMessageSearchIndex extends ListeningMessageSearchIndex {
         // parse the message to index headers and body
         parser.parse(membership.getFullContent());
 
-
         return doc;
     }
 
@@ -773,10 +768,6 @@ public class LuceneMessageSearchIndex extends ListeningMessageSearchIndex {
             case Minute -> SENT_DATE_FIELD_MINUTE_RESOLUTION;
             case Second -> SENT_DATE_FIELD_SECOND_RESOLUTION;
         };
-    }
-
-    private static Calendar getGMT() {
-        return Calendar.getInstance(TimeZone.getTimeZone("GMT"), Locale.US);
     }
 
     private String toInteralDateField(DateResolution res) {
@@ -804,7 +795,7 @@ public class LuceneMessageSearchIndex extends ListeningMessageSearchIndex {
     /**
      * Return a {@link Query} which is build based on the given {@link SearchQuery.InternalDateCriterion}
      */
-    private Query createInternalDateQuery(SearchQuery.InternalDateCriterion crit) throws UnsupportedSearchException {
+    private Query createInternalDateQuery(SearchQuery.InternalDateCriterion crit) {
         DateOperator dop = crit.getOperator();
         DateResolution res = dop.getDateResultion();
         String field = toInteralDateField(res);
@@ -814,7 +805,7 @@ public class LuceneMessageSearchIndex extends ListeningMessageSearchIndex {
     /**
      * Return a {@link Query} which is build based on the given {@link SearchQuery.SaveDateCriterion}
      */
-    private Query createSaveDateQuery(SearchQuery.SaveDateCriterion crit) throws UnsupportedSearchException {
+    private Query createSaveDateQuery(SearchQuery.SaveDateCriterion crit) {
         DateOperator dop = crit.getOperator();
         DateResolution res = dop.getDateResultion();
         String field = toSaveDateField(res);
@@ -824,7 +815,7 @@ public class LuceneMessageSearchIndex extends ListeningMessageSearchIndex {
     /**
      * Return a {@link Query} which is build based on the given {@link SearchQuery.SizeCriterion}
      */
-    private Query createSizeQuery(SearchQuery.SizeCriterion crit) throws UnsupportedSearchException {
+    private Query createSizeQuery(SearchQuery.SizeCriterion crit) {
         NumericOperator op = crit.getOperator();
         return switch (op.getType()) {
             case EQUALS -> LongPoint.newExactQuery(SIZE_FIELD, op.getValue());
@@ -1104,7 +1095,7 @@ public class LuceneMessageSearchIndex extends ListeningMessageSearchIndex {
     /**
      * Return a {@link Query} which is build based on the given {@link SearchQuery.AllCriterion}
      */
-    private Query createAllQuery(SearchQuery.AllCriterion crit) throws UnsupportedSearchException {
+    private Query createAllQuery() {
         BooleanQuery.Builder queryBuilder = new BooleanQuery.Builder();
 
         queryBuilder.add(createQuery(MessageRange.all()), BooleanClause.Occur.MUST);
@@ -1116,7 +1107,7 @@ public class LuceneMessageSearchIndex extends ListeningMessageSearchIndex {
     /**
      * Return a {@link Query} which is build based on the given {@link SearchQuery.ConjunctionCriterion}
      */
-    private Query createConjunctionQuery(SearchQuery.ConjunctionCriterion crit, Query inMailboxes, Collection<MessageUid> recentUids) throws UnsupportedSearchException, MailboxException {
+    private Query createConjunctionQuery(SearchQuery.ConjunctionCriterion crit, Query inMailboxes, Collection<MessageUid> recentUids) throws MailboxException {
         List<Criterion> crits = crit.getCriteria();
         BooleanQuery.Builder conQuery = new BooleanQuery.Builder();
         switch (crit.getType()) {
@@ -1170,7 +1161,7 @@ public class LuceneMessageSearchIndex extends ListeningMessageSearchIndex {
         } else if (criterion instanceof SearchQuery.TextCriterion crit) {
             return createTextQuery(crit);
         } else if (criterion instanceof SearchQuery.AllCriterion) {
-            return createAllQuery((AllCriterion) criterion);
+            return createAllQuery();
         } else if (criterion instanceof SearchQuery.ConjunctionCriterion crit) {
             return createConjunctionQuery(crit, inMailboxes, recentUids);
         } else if (criterion instanceof SearchQuery.ModSeqCriterion) {
@@ -1244,10 +1235,8 @@ public class LuceneMessageSearchIndex extends ListeningMessageSearchIndex {
      * Add the given {@link Flags} to the {@link Document}
      */
     private void indexFlags(Document doc, Flags f) {
-        List<String> fString = new ArrayList<>();
         Flag[] flags = f.getSystemFlags();
         for (Flag flag : flags) {
-            fString.add(toString(flag));
             doc.add(new StringField(FLAGS_FIELD, toString(flag), Store.YES));
         }
 
@@ -1260,7 +1249,6 @@ public class LuceneMessageSearchIndex extends ListeningMessageSearchIndex {
         if (flags.length == 0 && userFlags.length == 0) {
             doc.add(new StringField(FLAGS_FIELD, "",Store.NO));
         }
-
     }
 
     private Query createQuery(MessageRange range) {
