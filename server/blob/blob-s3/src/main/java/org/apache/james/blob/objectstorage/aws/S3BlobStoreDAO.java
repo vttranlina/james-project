@@ -25,6 +25,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.time.Duration;
+import java.util.Base64;
 import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -46,6 +47,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
+import com.google.common.hash.Hashing;
 import com.google.common.io.ByteSource;
 import com.google.common.io.FileBackedOutputStream;
 
@@ -62,6 +64,7 @@ import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.model.Bucket;
 import software.amazon.awssdk.services.s3.model.BucketAlreadyOwnedByYouException;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.ListBucketsResponse;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
@@ -70,7 +73,6 @@ import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 import software.amazon.awssdk.services.s3.model.PutObjectResponse;
 import software.amazon.awssdk.services.s3.model.S3Object;
-
 public class S3BlobStoreDAO implements BlobStoreDAO {
 
     private static class FileBackedOutputStreamByteSource extends ByteSource {
@@ -224,6 +226,42 @@ public class S3BlobStoreDAO implements BlobStoreDAO {
             .retryWhen(createBucketOnRetry(resolvedBucketName))
             .publishOn(Schedulers.parallel())
             .then();
+    }
+
+    public Mono<Void> save(BucketName bucketName, BlobId blobId, byte[] data, String customerKey) {
+        BucketName resolvedBucketName = bucketNameResolver.resolve(bucketName);
+        String sseKeyMd5 = Base64.getEncoder().encodeToString(Hashing.md5().hashBytes(Base64.getDecoder().decode(customerKey)).asBytes());
+
+        return Mono.fromFuture(() ->
+                client.putObject(
+                    builder -> builder.bucket(resolvedBucketName.asString())
+                        .sseCustomerAlgorithm("AES256")
+                        .sseCustomerKey(customerKey)
+                        .sseCustomerKeyMD5(sseKeyMd5)
+                        .key(blobId.asString())
+                        .contentLength((long) data.length),
+                    AsyncRequestBody.fromBytes(data)))
+            .retryWhen(createBucketOnRetry(resolvedBucketName))
+            .publishOn(Schedulers.parallel())
+            .then();
+    }
+
+    public Mono<byte[]> readBytes(BucketName bucketName, BlobId blobId, String customerKey) {
+        String sseKeyMd5 = Base64.getEncoder().encodeToString(Hashing.md5().hashBytes(Base64.getDecoder().decode(customerKey)).asBytes());
+
+        GetObjectRequest getRequest = GetObjectRequest.builder()
+            .bucket(bucketName.asString())
+            .key(blobId.asString())
+            .sseCustomerAlgorithm("AES256")
+            .sseCustomerKey(customerKey)
+            .sseCustomerKeyMD5(sseKeyMd5)
+            .build();
+        return Mono.fromFuture(() ->
+                client.getObject(getRequest,
+                    new MinimalCopyBytesResponseTransformer(configuration, blobId)))
+            .publishOn(Schedulers.parallel())
+            .map(BytesWrapper::asByteArrayUnsafe)
+            .onErrorMap(e -> e.getCause() instanceof OutOfMemoryError, Throwable::getCause);
     }
 
     @Override
