@@ -74,6 +74,7 @@ public class Preview {
 
         public Preview fromMime4JMessage(Message mimeMessage) throws IOException {
             MessageContentExtractor.MessageContent messageContent = messageContentExtractor.extract(mimeMessage);
+
             return messageContent.extractMainTextContent(htmlTextExtractor)
                 .map(Preview::compute)
                 .orElse(Preview.EMPTY);
