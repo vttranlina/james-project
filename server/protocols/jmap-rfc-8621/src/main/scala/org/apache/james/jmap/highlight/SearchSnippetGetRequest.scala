@@ -22,8 +22,8 @@ package org.apache.james.jmap.highlight
 import cats.implicits._
 import com.google.common.base.Preconditions
 import org.apache.james.jmap.core.AccountId
-import org.apache.james.jmap.highlight.SearchSnippetGetRequest.{filterAsCriterionList, validateFilter}
-import org.apache.james.jmap.mail.{And, Email, FilterCondition, FilterOperator, FilterQuery, UnparsedEmailId, UnsupportedFilterException, UnsupportedNestingException}
+import org.apache.james.jmap.highlight.SearchSnippetGetRequest.filterAsCriterionList
+import org.apache.james.jmap.mail.{Email, FilterQuery, UnparsedEmailId, UnsupportedFilterException}
 import org.apache.james.jmap.method.{GetRequest, WithAccountId}
 import org.apache.james.jmap.utils.search.MailboxFilter.{AndFilter, Body, NotFilter, OrFilter, QueryFilter, Subject, Text}
 import org.apache.james.mailbox.model.SearchQuery.Criterion
@@ -39,30 +39,6 @@ object SearchSnippetGetRequest {
 
   private def filterAsCriterionList(filterQuery: FilterQuery): Either[UnsupportedFilterException, List[Criterion]] =
     FILTER_SUPPORT_LIST.traverse(_.toQuery(filterQuery)).map(_.flatten)
-
-  def validateFilter(filter: FilterQuery): Either[UnsupportedNestingException, FilterQuery] = filter match {
-    case filterCondition: FilterCondition => Right(filterCondition)
-    case filterOperator: FilterOperator if filterOperator.operator == And =>
-      val (nestedCount, topLevelCount) = (filter.countNestedMailboxFilter, filter.countMailboxFilter)
-      (nestedCount, topLevelCount) match {
-        case (1, 1) | (0, _) => Right(filterOperator)
-        case _ => rejectMailboxFilters(filterOperator)
-      }
-    case operator: FilterOperator => rejectMailboxFilters(operator)
-  }
-
-  private def rejectMailboxFilters(filter: FilterQuery): Either[UnsupportedNestingException, FilterQuery] =
-    filter match {
-      case filterCondition: FilterCondition if filterCondition.inMailbox.isDefined =>
-        scala.Left(UnsupportedNestingException("Nested inMailbox filters are not supported"))
-      case filterCondition: FilterCondition if filterCondition.inMailboxOtherThan.isDefined =>
-        scala.Left(UnsupportedNestingException("Nested inMailboxOtherThan filter are not supported"))
-      case filterCondition: FilterCondition => Right(filterCondition)
-      case filterOperator: FilterOperator =>
-        filterOperator.conditions.toList
-          .traverse(rejectMailboxFilters)
-          .map(_ => filterOperator)
-    }
 }
 
 case class SearchSnippetGetRequest(accountId: AccountId,
@@ -76,7 +52,7 @@ case class SearchSnippetGetRequest(accountId: AccountId,
   def tryFilterAsSearchQuery: Either[UnsupportedOperationException, SearchQuery.Builder] = {
     Preconditions.checkArgument(filter.isDefined, "filter must be defined".asInstanceOf[Object])
     for {
-      validatedFilter <- validateFilter(filter.get)
+      validatedFilter <- FilterQuery.validateFilter(filter.get)
       criteria <- filterAsCriterionList(validatedFilter)
     } yield new SearchQuery.Builder().andCriteria(criteria.asJava)
   }

@@ -71,23 +71,23 @@ class SearchSnippetGetMethod @Inject()(serializer: SearchSnippetSerializer,
 
   private def getSearchSnippet(request: SearchSnippetGetRequest,
                                mailboxSession: MailboxSession,
-                               capabilities: Set[CapabilityIdentifier]): SMono[Seq[SearchSnippet]] =
-    if (request.emptyRequest) {
+                               capabilities: Set[CapabilityIdentifier]): SMono[Seq[SearchSnippet]] = {
+    val validatedMessageId: List[MessageId] = request.emailIds.flatMap(asMessageId(_).toOption)
+    if (request.emptyRequest || validatedMessageId.isEmpty) {
       SMono.just(Seq.empty)
     } else {
-      SMono.fromCallable(() => request.emailIds.flatMap(asMessageId(_).toOption))
-        .filter(messageIds => messageIds.nonEmpty)
-        .flatMap(messageIds => buildMultiMailboxesSearchQuery(request, messageIds, capabilities, mailboxSession)
+      buildMultiMailboxesSearchQuery(request, validatedMessageId, capabilities, mailboxSession)
           .fold(e => SMono.error(e),
-            multiMailboxesSearchQuery => SFlux(searchHighlighter.highlightSearch(messageIds.asJava, multiMailboxesSearchQuery, mailboxSession))
-              .collectSeq()))
+            multiMailboxesSearchQuery => SFlux(searchHighlighter.highlightSearch(validatedMessageId.asJava, multiMailboxesSearchQuery, mailboxSession))
+              .collectSeq())
         .switchIfEmpty(SMono.just(Seq.empty))
     }
+  }
 
   private def asMessageId(id: UnparsedEmailId): Either[(UnparsedEmailId, IllegalArgumentException), MessageId] =
     Try(messageIdFactory.fromString(id.id.value))
       .toEither
-      .left.map(error => (id, new IllegalArgumentException(s"""Can not parse UnparsedEmailId(${id.id.value}) as MessageId""", error)))
+      .left.map(error => (id, new IllegalArgumentException(s"Can not parse UnparsedEmailId(${id.id.value}) as MessageId", error)))
 
   private def buildMultiMailboxesSearchQuery(request: SearchSnippetGetRequest,
                                              messageIds: List[MessageId],
