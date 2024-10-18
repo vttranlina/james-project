@@ -24,6 +24,8 @@ import java.io.IOException;
 import org.apache.james.events.EventListener;
 import org.apache.james.filesystem.api.FileSystem;
 import org.apache.james.mailbox.lucene.search.LuceneMessageSearchIndex;
+import org.apache.james.mailbox.lucene.search.LuceneSearchHighlighter;
+import org.apache.james.mailbox.searchhighligt.SearchHighlighter;
 import org.apache.james.mailbox.searchhighligt.SearchHighlighterConfiguration;
 import org.apache.james.mailbox.store.search.ListeningMessageSearchIndex;
 import org.apache.james.mailbox.store.search.MessageSearchIndex;
@@ -40,6 +42,9 @@ public class LuceneSearchMailboxModule extends AbstractModule {
 
     @Override
     protected void configure() {
+        bind(SearchHighlighter.class).to(LuceneSearchHighlighter.class)
+            .in(Scopes.SINGLETON);
+
         bind(LuceneMessageSearchIndex.class).in(Scopes.SINGLETON);
         bind(MessageSearchIndex.class).to(LuceneMessageSearchIndex.class);
         bind(ListeningMessageSearchIndex.class).to(LuceneMessageSearchIndex.class);

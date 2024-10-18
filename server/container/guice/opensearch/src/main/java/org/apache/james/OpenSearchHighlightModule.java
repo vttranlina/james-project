@@ -17,22 +17,20 @@
  * under the License.                                           *
  ****************************************************************/
 
-package org.apache.james.modules.mailbox;
+package org.apache.james;
 
-import java.io.IOException;
-
-import org.apache.lucene.store.ByteBuffersDirectory;
-import org.apache.lucene.store.Directory;
+import org.apache.james.mailbox.opensearch.search.OpenSearchSearchHighlighter;
+import org.apache.james.mailbox.searchhighligt.SearchHighlighter;
 
 import com.google.inject.AbstractModule;
-import com.google.inject.Provides;
-import com.google.inject.Singleton;
+import com.google.inject.Scopes;
 
-public class LuceneMemorySearchMailboxModule extends AbstractModule {
+public class OpenSearchHighlightModule extends AbstractModule {
 
-    @Provides
-    @Singleton
-    Directory provideDirectory() throws IOException {
-        return new ByteBuffersDirectory();
+    @Override
+    protected void configure() {
+        bind(SearchHighlighter.class).to(OpenSearchSearchHighlighter.class)
+            .in(Scopes.SINGLETON);
     }
+
 }

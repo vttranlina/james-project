@@ -23,6 +23,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
+
 import org.apache.james.mailbox.MailboxSession;
 import org.apache.james.mailbox.model.MailboxId;
 import org.apache.james.mailbox.model.MessageId;
@@ -50,6 +53,8 @@ public class OpenSearchSearchHighlighter implements SearchHighlighter {
     private final StoreMailboxManager storeMailboxManager;
     private final MessageId.Factory messageIdFactory;
 
+    @Inject
+    @Singleton
     public OpenSearchSearchHighlighter(OpenSearchSearcher openSearchSearcher, StoreMailboxManager storeMailboxManager, MessageId.Factory messageIdFactory) {
         this.openSearchSearcher = openSearchSearcher;
         this.storeMailboxManager = storeMailboxManager;

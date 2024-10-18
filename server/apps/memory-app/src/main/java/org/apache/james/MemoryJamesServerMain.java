@@ -118,7 +118,11 @@ public class MemoryJamesServerMain implements JamesServerMain {
         new ProtocolHandlerModule(),
         new SMTPServerModule());
 
+    public static final Module SEARCH_MODULE = Modules.override(new LuceneSearchMailboxModule())
+        .with(new LuceneMemorySearchMailboxModule());
+
     public static final Module JMAP = Modules.combine(
+        SEARCH_MODULE,
         new JmapEventBusModule(),
         new JmapTasksModule(),
         new MemoryDataJmapModule(),
@@ -151,15 +155,11 @@ public class MemoryJamesServerMain implements JamesServerMain {
         SMTP_ONLY_MODULE,
         new IMAPServerModule());
 
-    public static final Module SEARCH_MODULE = Modules.override(new LuceneSearchMailboxModule())
-        .with(new LuceneMemorySearchMailboxModule());
-
     public static final Module IN_MEMORY_SERVER_AGGREGATE_MODULE = Modules.combine(
         IN_MEMORY_SERVER_MODULE,
         PROTOCOLS,
         JMAP,
         WEBADMIN,
-        SEARCH_MODULE,
         new DKIMMailetModule());
 
     public static void main(String[] args) throws Exception {
