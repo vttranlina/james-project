@@ -63,7 +63,7 @@ public class OpenSearchSearchHighlighter implements SearchHighlighter {
 
     @Override
     public Flux<SearchSnippet> highlightSearch(List<MessageId> messageIds, MultimailboxesSearchQuery expression, MailboxSession session) {
-        if (messageIds.isEmpty()) {
+        if (messageIds.isEmpty() || expression.getSearchQuery().getCriteria().isEmpty()) {
             return Flux.empty();
         }
 

@@ -1054,7 +1054,7 @@ public class LuceneMessageSearchIndex extends ListeningMessageSearchIndex {
             queryBuilder.add(createTermQuery(HEADERS_FIELD,value), BooleanClause.Occur.SHOULD);
             return queryBuilder.build();
         default:
-            throw new UnsupportedSearchException();
+            return new BooleanQuery.Builder().build(); // TODO: Implement
         }
     }
 
