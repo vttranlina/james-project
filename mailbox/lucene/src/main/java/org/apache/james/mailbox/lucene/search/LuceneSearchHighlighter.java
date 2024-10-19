@@ -103,7 +103,7 @@ public class LuceneSearchHighlighter implements SearchHighlighter {
 
     @Override
     public Flux<SearchSnippet> highlightSearch(List<MessageId> messageIds, MultimailboxesSearchQuery expression, MailboxSession session) {
-        if (messageIds.isEmpty()) {
+        if (messageIds.isEmpty() || expression.getSearchQuery().getCriteria().isEmpty()) {
             return Flux.empty();
         }
         return storeMailboxManager.getInMailboxIds(expression, session)
