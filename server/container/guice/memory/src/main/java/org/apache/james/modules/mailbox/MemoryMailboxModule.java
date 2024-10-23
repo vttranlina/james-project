@@ -88,6 +88,7 @@ import com.google.inject.Inject;
 import com.google.inject.Scopes;
 import com.google.inject.multibindings.Multibinder;
 import com.google.inject.name.Names;
+import com.google.inject.util.Modules;
 
 public class MemoryMailboxModule extends AbstractModule {
 
@@ -97,7 +98,7 @@ public class MemoryMailboxModule extends AbstractModule {
         install(new MemoryDeadLetterModule());
         install(new MemoryQuotaModule());
         install(new MemoryQuotaSearchModule());
-        install(new LuceneSearchMailboxModule());
+        install(Modules.override(new LuceneSearchMailboxModule()).with(new LuceneMemorySearchMailboxModule()));
 
         bind(MessageMapperFactory.class).to(InMemoryMailboxSessionMapperFactory.class);
         bind(MailboxMapperFactory.class).to(InMemoryMailboxSessionMapperFactory.class);
