@@ -18,6 +18,8 @@
  ****************************************************************/
 package org.apache.james.mailbox.lucene.search;
 
+import static org.apache.james.mailbox.lucene.search.DocumentFieldConstants.ATTACHMENT_TEXT_CONTENT_FIELD;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.Charset;
@@ -66,6 +68,7 @@ import org.apache.james.mailbox.model.SearchQuery.UidCriterion;
 import org.apache.james.mailbox.model.SearchQuery.UidRange;
 import org.apache.james.mailbox.model.UpdatedFlags;
 import org.apache.james.mailbox.store.MailboxSessionMapperFactory;
+import org.apache.james.mailbox.store.extractor.JsoupTextExtractor;
 import org.apache.james.mailbox.store.mail.model.MailboxMessage;
 import org.apache.james.mailbox.store.search.ListeningMessageSearchIndex;
 import org.apache.james.mailbox.store.search.SearchUtil;
@@ -394,6 +397,7 @@ public class LuceneMessageSearchIndex extends ListeningMessageSearchIndex {
 
     private final MailboxId.Factory mailboxIdFactory;
     private final MessageId.Factory messageIdFactory;
+    private final LuceneIndexableDocument indexableDocument = new LuceneIndexableDocument(new JsoupTextExtractor());
 
     @VisibleForTesting
     final IndexWriter writer;
@@ -1041,18 +1045,21 @@ public class LuceneMessageSearchIndex extends ListeningMessageSearchIndex {
     /**
      * Return a {@link Query} which is build based on the given {@link SearchQuery.TextCriterion}
      */
-    private Query createTextQuery(SearchQuery.TextCriterion crit) throws UnsupportedSearchException {
+    private Query createTextQuery(SearchQuery.TextCriterion crit) {
         String value = crit.getOperator().getValue().toUpperCase(Locale.US);
         switch (crit.getType()) {
-        case BODY:
-            return createTermQuery(BODY_FIELD, value);
-        case FULL:
-            BooleanQuery.Builder queryBuilder = new BooleanQuery.Builder();
-            queryBuilder.add(createTermQuery(BODY_FIELD, value), BooleanClause.Occur.SHOULD);
-            queryBuilder.add(createTermQuery(HEADERS_FIELD,value), BooleanClause.Occur.SHOULD);
-            return queryBuilder.build();
-        default:
-            throw new UnsupportedSearchException();
+            case BODY:
+                return createTermQuery(BODY_FIELD, value);
+            case FULL:
+                BooleanQuery.Builder queryBuilder = new BooleanQuery.Builder();
+                queryBuilder.add(createTermQuery(BODY_FIELD, value), BooleanClause.Occur.SHOULD);
+                queryBuilder.add(createTermQuery(HEADERS_FIELD, value), BooleanClause.Occur.SHOULD);
+                queryBuilder.add(createTermQuery(ATTACHMENT_TEXT_CONTENT_FIELD, value), BooleanClause.Occur.SHOULD);
+                return queryBuilder.build();
+            case ATTACHMENTS:
+                return createTermQuery(ATTACHMENT_TEXT_CONTENT_FIELD, value);
+            default:
+                return new BooleanQuery.Builder().build(); // TODO: JAMES-4082
         }
     }
 
@@ -1141,15 +1148,12 @@ public class LuceneMessageSearchIndex extends ListeningMessageSearchIndex {
 
     @Override
     public Mono<Void> add(MailboxSession session, Mailbox mailbox, MailboxMessage membership) {
-        return Mono.fromRunnable(Throwing.runnable(() -> {
-            Document doc = createMessageDocument(session, membership);
-            Document flagsDoc = createFlagsDocument(membership);
-
-            log.trace("Adding document: uid:'{}' with flags: {}", doc.get("uid"), flagsDoc);
-
-            writer.addDocument(doc);
-            writer.addDocument(flagsDoc);
-        }));
+        return indexableDocument.createMessageDocument(membership, session)
+            .flatMap(document -> Mono.fromRunnable(Throwing.runnable(() -> {
+                writer.addDocument(document);
+                writer.addDocument(indexableDocument.createFlagsDocument(membership));
+            })))
+            .then();
     }
 
     @Override
