@@ -248,5 +248,6 @@ public interface DocumentFieldConstants {
     Function<String, String> ATTACHMENT_FIELD_FUNCTION = (fieldName) -> ATTACHMENTS + "." + fieldName;
 
     String ATTACHMENT_TEXT_CONTENT_FIELD = ATTACHMENT_FIELD_FUNCTION.apply(Attachment.TEXT_CONTENT);
+    String ATTACHMENT_FILE_NAME_FIELD = ATTACHMENT_FIELD_FUNCTION.apply(Attachment.FILENAME);
 
 }

@@ -19,6 +19,7 @@
 
 package org.apache.james.mailbox.lucene.search;
 
+import static org.apache.james.mailbox.lucene.search.DocumentFieldConstants.ATTACHMENT_FILE_NAME_FIELD;
 import static org.apache.james.mailbox.lucene.search.DocumentFieldConstants.ATTACHMENT_TEXT_CONTENT_FIELD;
 import static org.apache.james.mailbox.lucene.search.DocumentFieldConstants.BASE_SUBJECT_FIELD;
 import static org.apache.james.mailbox.lucene.search.DocumentFieldConstants.BCC_FIELD;
@@ -76,6 +77,7 @@ import org.apache.james.mailbox.MessageUid;
 import org.apache.james.mailbox.extractor.TextExtractor;
 import org.apache.james.mailbox.model.MailboxId;
 import org.apache.james.mailbox.model.MessageAttachmentMetadata;
+import org.apache.james.mailbox.opensearch.json.EMailers;
 import org.apache.james.mailbox.opensearch.json.HeaderCollection;
 import org.apache.james.mailbox.opensearch.json.MimePart;
 import org.apache.james.mailbox.opensearch.json.MimePartParser;
@@ -158,19 +160,19 @@ public class LuceneIndexableDocument {
 
                 switch (headerName) {
                     case "TO":
-                        doc.add(new StringField(TO_FIELD, headerValue, Field.Store.NO));
+//                        doc.add(new StringField(TO_FIELD, headerValue, Field.Store.NO));
                         doc.add(new SortedSetDocValuesField(FIRST_TO_MAILBOX_NAME_FIELD, new BytesRef(SearchUtil.getMailboxAddress(header.getValue()))));
                         break;
                     case "FROM":
-                        doc.add(new StringField(FROM_FIELD, headerValue, Field.Store.NO));
+//                        doc.add(new StringField(FROM_FIELD, headerValue, Field.Store.NO));
                         doc.add(new SortedSetDocValuesField(FIRST_FROM_MAILBOX_NAME_FIELD, new BytesRef(SearchUtil.getMailboxAddress(header.getValue()))));
                         break;
                     case "CC":
-                        doc.add(new StringField(CC_FIELD, headerValue, Field.Store.NO));
+//                        doc.add(new StringField(CC_FIELD, headerValue, Field.Store.NO));
                         doc.add(new SortedSetDocValuesField(FIRST_CC_MAILBOX_NAME_FIELD, new BytesRef(SearchUtil.getMailboxAddress(header.getValue()))));
                         break;
                     case "BCC":
-                        doc.add(new StringField(BCC_FIELD, headerValue, Field.Store.NO));
+//                        doc.add(new StringField(BCC_FIELD, headerValue, Field.Store.NO));
                         break;
                     case "SUBJECT":
                         doc.add(new StringField(SUBJECT_FIELD, header.getValue(), Field.Store.YES));
@@ -182,6 +184,14 @@ public class LuceneIndexableDocument {
                 }
             });
 
+        doc.add(new TextField(FROM_FIELD, uppercase(EMailers.from(headerCollection.getFromAddressSet()).serialize()), Field.Store.YES));
+        doc.add(new TextField(TO_FIELD, uppercase(EMailers.from(headerCollection.getToAddressSet()).serialize()), Field.Store.YES));
+
+        String ccSerialize = uppercase(EMailers.from(headerCollection.getCcAddressSet()).serialize());
+        System.out.println("Indexing cc: " + ccSerialize);
+        doc.add(new TextField(CC_FIELD, ccSerialize , Field.Store.YES));
+        doc.add(new TextField(BCC_FIELD, uppercase(EMailers.from(headerCollection.getBccAddressSet()).serialize()), Field.Store.YES));
+
         // index body
         Optional<String> bodyText = mimePartExtracted.locateFirstTextBody();
         Optional<String> bodyHtml = mimePartExtracted.locateFirstHtmlBody();
@@ -190,13 +200,10 @@ public class LuceneIndexableDocument {
             .ifPresent(bodyContent -> doc.add(new TextField(BODY_FIELD, bodyContent, Field.Store.YES)));
 
         // index attachment
-        mimePartExtracted.getAttachmentsStream()
-            .flatMap(attachmentMimePart -> attachmentMimePart.getTextualBody().stream())
-            .forEach(textualBody -> {
-//                doc.add(new TextField(BODY_FIELD, textualBody, Field.Store.YES));
-                doc.add(new TextField(ATTACHMENT_TEXT_CONTENT_FIELD, textualBody, Field.Store.YES));
-            });
-
+        mimePartExtracted.getAttachmentsStream().forEach(attachmentFields -> {
+            attachmentFields.getTextualBody().ifPresent(textualBody -> doc.add(new TextField(ATTACHMENT_TEXT_CONTENT_FIELD, textualBody, Field.Store.YES)));
+            attachmentFields.getFileName().ifPresent(fileName -> doc.add(new StringField(ATTACHMENT_FILE_NAME_FIELD, uppercase(fileName), Field.Store.YES)));
+        });
         return doc;
     }
 
@@ -215,11 +222,16 @@ public class LuceneIndexableDocument {
 
         Arrays.stream(messageFlags.getSystemFlags())
             .forEach(sysFlag ->
+            {System.out.println("Indexing system flags: " + Optional.ofNullable(SYSTEM_FLAG_STRING_MAP.get(sysFlag))
+                        .orElse(sysFlag.toString()));
                 doc.add(new StringField(FLAGS_FIELD, Optional.ofNullable(SYSTEM_FLAG_STRING_MAP.get(sysFlag))
-                    .orElse(sysFlag.toString()), Field.Store.YES)));
+                    .orElse(sysFlag.toString()), Field.Store.YES));});
 
         Arrays.stream(messageFlags.getUserFlags())
-            .forEach(userFlag -> doc.add(new StringField(FLAGS_FIELD, lowercase(userFlag), Field.Store.YES)));
+            .forEach(userFlag -> {
+                System.out.println("Indexing user flags: " + userFlag);
+                doc.add(new StringField(FLAGS_FIELD, userFlag, Field.Store.YES));
+            });
 
         // if no flags are there we just use a empty field
         if (messageFlags.getSystemFlags().length == 0 && messageFlags.getUserFlags().length == 0) {

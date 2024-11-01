@@ -518,7 +518,7 @@ public abstract class AbstractMessageSearchIndexTest {
 
         awaitMessageCount(ImmutableList.of(), SearchQuery.matchAll(), 14);
 
-        String emailToSearch = "luc.duzan@james.apache.org";
+        String emailToSearch = "duzan";
         SearchQuery searchQuery = SearchQuery.of(SearchQuery.or(ImmutableList.of(
             SearchQuery.address(AddressType.From, emailToSearch),
             SearchQuery.address(AddressType.To, emailToSearch),

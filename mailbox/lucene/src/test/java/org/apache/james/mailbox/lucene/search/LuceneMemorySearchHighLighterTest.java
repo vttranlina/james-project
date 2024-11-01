@@ -46,6 +46,7 @@ import org.apache.james.mailbox.searchhighligt.SearchHighlighterConfiguration;
 import org.apache.james.mailbox.searchhighligt.SearchSnippet;
 import org.apache.james.mailbox.store.StoreMailboxManager;
 import org.apache.james.mailbox.store.StoreMessageManager;
+import org.apache.james.mailbox.store.extractor.JsoupTextExtractor;
 import org.apache.james.mailbox.store.search.MessageSearchIndex;
 import org.apache.james.mime4j.dom.Message;
 import org.apache.james.util.ClassLoaderUtils;
@@ -75,7 +76,7 @@ class LuceneMemorySearchHighLighterTest implements SearchHighLighterContract {
             .listeningSearchIndex(Throwing.function(preInstanciationStage -> new LuceneMessageSearchIndex(
                 preInstanciationStage.getMapperFactory(), new InMemoryId.Factory(), new ByteBuffersDirectory(),
                 messageIdFactory,
-                preInstanciationStage.getSessionProvider())))
+                preInstanciationStage.getSessionProvider(), new JsoupTextExtractor())))
             .noPreDeletionHooks()
             .storeQuotaManager()
             .build();
